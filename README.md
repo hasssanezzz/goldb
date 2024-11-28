@@ -1,9 +1,3 @@
-To add header reference links for the titles in the README, I'll include anchor links at the top of the document that will help users navigate directly to different sections.
-
-Here's how the updated README would look:
-
----
-
 # Goldb Database Engine
 
 Goldb is a lightweight, efficient key-value database engine that leverages the power of a **Log-Structured Merge (LSM) tree** for high performance and reliability. The `engine` package serves as the primary interface, abstracting complex internal mechanisms to provide an intuitive API for users.
