@@ -7,13 +7,14 @@ Goldb is a lightweight, efficient key-value database engine that leverages the p
 
 ## TODOS
 
-### Project is not finished
+### Project is not finished yet
 
-1. Implement a WAL (write ahead log).
-1. layer the db engine with an HTTP server, like [couchdb](https://couchdb.apache.org/).
-1. Use a compaction alogrithm and perform compaction periodically.
-2. Add the use of bloom filters.
-3. Manage periodic flushes.
+- [X] layer the db engine with an HTTP server, like [couchdb](https://couchdb.apache.org/).
+- [X] Manage periodic flushes.
+- [ ] Implement a WAL (write ahead log).
+- [ ] Add locks to avoid concurrency issues.
+- [ ] Use a compaction alogrithm and perform compaction periodically.
+- [ ] Add the use of bloom filters.
 
 ## **How It Works**
 

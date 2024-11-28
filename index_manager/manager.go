@@ -80,9 +80,6 @@ func (im *IndexManager) ReadTables() error {
 }
 
 func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
-	for _, pair := range im.Memtable.Items() {
-		fmt.Println(pair)
-	}
 	if im.Memtable.Contains(key) {
 		indexNode := im.Memtable.Get(key)
 		if indexNode.Size == 0 {
@@ -92,7 +89,6 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 	}
 
 	for _, table := range im.sstables {
-		println("serial:", table.Meta.Serial)
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*ErrKeyRemoved); ok {
@@ -138,7 +134,7 @@ func (im *IndexManager) Flush() error {
 	im.sortSSTablesBySerial()
 	im.currSerial++
 
-	log.Printf("index manager: flushed a tree successfully, created new table %d", im.currSerial-1)
+	log.Printf("index manager: flushed the memtable successfully, created new table %d", im.currSerial-1)
 
 	return nil
 }
@@ -194,9 +190,6 @@ func (im *IndexManager) serializeTree(w io.Writer, serial uint32, path string) (
 
 	// write pairs
 	for _, pair := range pairs {
-		if pair.Value.Size == 0 {
-			println("found deleted value")
-		}
 		_, err = w.Write(keyToBytes(pair.Key))
 		if err != nil {
 			return SSTableMetadata{}, err

@@ -109,7 +109,6 @@ func (s *SSTable) Close() error {
 
 func (s *SSTable) nthKey(n int) (memtable.KVPair, error) {
 	position := int64(MetadataSize + n*KVPairSize)
-	// fmt.Printf("trying to access the %dth item pos: %d\n", n, position)
 	_, err := s.file.Seek(position, io.SeekStart)
 	if err != nil {
 		return memtable.KVPair{}, fmt.Errorf("sstable %q can not seek position %d: %v", s.Meta.Path, position, err)

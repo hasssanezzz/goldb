@@ -2,12 +2,15 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 
 	"github.com/hasssanezzz/goldb-engine/index_manager"
 	"github.com/hasssanezzz/goldb-engine/memtable"
 	"github.com/hasssanezzz/goldb-engine/storage_manager"
 )
+
+const MemtableSizeThreshold = 500_000 // about 126MB of memory
 
 type Engine struct {
 	indexMangaer   *index_manager.IndexManager
@@ -34,6 +37,17 @@ func New(homepath string) (*Engine, error) {
 }
 
 func (e *Engine) Set(key string, value []byte) error {
+	// periodic flush, after the memtable hits its threshold
+	if e.indexMangaer.Memtable.Size >= MemtableSizeThreshold {
+		// TODO - add locks to avoid concurrency issues.
+		go func() {
+			err := e.indexMangaer.Flush()
+			if err != nil {
+				log.Println("engine periodic flush error: ", err)
+			}
+		}()
+	}
+
 	offset, err := e.storageManager.WriteValue(value)
 	if err != nil {
 		return fmt.Errorf("db engine can not write (%q, %x): %v", key, value, err)

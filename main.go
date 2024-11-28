@@ -1,113 +1,70 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 
-	"github.com/hasssanezzz/goldb-engine/engine"
+	"github.com/hasssanezzz/goldb-engine/api"
 )
 
-func gen() {
-	// mp := memtable.New()
-	// n := 1_000
-	// for i := 0; i < n; i++ {
-	// 	mp.Set(fmt.Sprintf("key-%d", i), avl.IndexNode{
-	// 		Offset: uint32(rand.Intn(n * 2)),
-	// 		Size:   uint32(i),
-	// 	})
-	// }
-	// mp.Set("key-55", memtable.IndexNode{Size: 69})
+func createHomeDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("error getting home directory: %v", err)
+	}
 
-	// mngr, err := index_manager.New("./.db")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	dirPath := filepath.Join(homeDir, ".goldb")
 
-	// mngr.Flush()
-
-	// r, err := mngr.Read("key-55")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println(r)
-
-	// file, err := os.Create("sst_1.bin")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer file.Close()
-	// index_manager.Flush(mp, file, 1)
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		err := os.MkdirAll(dirPath, 0755)
+		if err != nil {
+			return "", fmt.Errorf("Error creating directory ~/.goldb: %v", err)
+		}
+	}
+	return dirPath, nil
 }
 
-// func parse() {
-// 	err := index_manager.NewSSTable("sst_1.bin", 1)
-// 	defer st.Close()
-
-// 	fmt.Println(st.Serial, st.Size, st.MinKey, st.MaxKey)
-
-// 	result, err := st.BSearch("key-55")
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	fmt.Println(result)
-// }
-
 func main() {
-	engine, err := engine.New("./.db")
+
+	host := flag.String("h", "localhost", "Host to bind the server to")
+	port := flag.String("p", "3011", "Port to listen on")
+	source := flag.String("s", "~/.goldb", "Path to the source directory")
+
+	if len(os.Args) > 1 && os.Args[1] == "--help" {
+		fmt.Println(`Usage: program [options]
+
+Options:
+  -h, string        Host to bind the server to (default: "localhost")
+  -p, string        Port to listen on (default: "3011")
+  -s, string        Path to the source directory (default: "~/.goldb")
+  --help            Show this help message and exit`)
+		os.Exit(0)
+	}
+
+	if *source == "~/.goldb" {
+		path, err := createHomeDir()
+		if err != err {
+			log.Fatal(err)
+		}
+		*source = path
+	}
+
+	api, err := api.New(*source)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("can not open db: %v", err)
 	}
-	defer engine.Close()
+	defer api.DB.Close()
 
-	args := os.Args
-	if len(args) == 4 || len(args) == 3 {
-		cmnd, key := args[1], args[2]
-		if cmnd == "get" {
-			data, err := engine.Get(key)
-			if err != nil {
-				panic(err)
-			}
-			println(string(data))
-		}
+	mux := http.NewServeMux()
+	api.SetupRoutes(mux)
 
-		if cmnd == "del" {
-			engine.Delete(key)
-		}
-
-		if cmnd == "set" {
-			err := engine.Set(key, []byte(args[3]))
-			if err != nil {
-				panic(err)
-			}
-		}
+	serverAddress := fmt.Sprintf("%s:%s", *host, *port)
+	log.Println("server is listening on", serverAddress)
+	if err := http.ListenAndServe(serverAddress, mux); err != nil {
+		log.Println("Error starting server:", err)
 	}
-
-	// err = engine.Set("email", []byte("dhassanezz98@gmail.com"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// data, err := engine.Get("email")
-	// if err != nil {
-	// 	log.Println(err)
-	// }
-	// fmt.Println(string(data))
-
-	// engine.Delete("email")
-
-	// data, err := engine.Get("email")
-	// if err != nil {
-	// 	log.Println(err)
-	// }
-	// fmt.Println(string(data))
-
-	// err = engine.Set("name", []byte("Hassan Ezz"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// err = engine.Set("age", []byte("18"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-
 }
