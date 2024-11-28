@@ -1,3 +1,4 @@
+**(ignore the main.go file for now, project is not done yet)**
 ### Goldb Database Engine
 
 Goldb is a lightweight, efficient key-value database engine that leverages the power of a **Log-Structured Merge (LSM) tree** for high performance and reliability. The `engine` package serves as the primary interface, abstracting complex internal mechanisms to provide an intuitive API for users.
