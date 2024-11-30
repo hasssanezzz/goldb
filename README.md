@@ -23,7 +23,11 @@ Goldb is a lightweight, efficient key-value database engine that leverages the p
 
 - [x] Layer the DB engine with an HTTP server, like [CouchDB](https://couchdb.apache.org/).
 - [x] Manage periodic flushes.
-- [ ] Implement a WAL (Write-Ahead Log).
+- [x] Implement a WAL (Write-Ahead Log).
+- [ ] Write better documentation.
+- [ ] Make the WAL smarter by ignoring deleted set operations.
+- [ ] Make logging conditional.
+- [ ] Utilze go routines.
 - [ ] Add locks to avoid concurrency issues.
 - [ ] Use a compaction algorithm and perform compaction periodically.
 - [ ] Add the use of bloom filters.
@@ -237,7 +241,9 @@ if err != nil {
 Remove a key-value pair using the `Delete` method:
 
 ```go
-db.Delete("key-1")
+if err := db.Delete("key-1"); err != nil {
+   log.Fatalf("Failed to delete data: %v", err)
+}
 ```
 
 ---
@@ -259,11 +265,10 @@ db.Delete("key-1")
   - Binary search through sorted SSTables for efficient lookups.
   - Recently written data is quickly accessible in memory.
 
-- **Persistence and Compaction:**
+- **Persistence and Recovery:**
+  - **Write-Ahead Log (WAL)**: Ensures durability and enables crash recovery by logging all writes before they are applied to the in-memory structure.
   - Durable storage with immutable SSTables.
   - [Will do] Optimized disk usage through compaction of older SSTables.
-
----
 
 ## **Project Design**
 
@@ -277,33 +282,18 @@ db.Delete("key-1")
    - Manages in-memory storage, SSTables, and compaction.
    - Provides a clean interface for database operations.
 
-3. **Periodic Flushing**:
+3. **Write-Ahead Log (WAL)**:
+
+   - Logs all write operations before applying them to in-memory structures.
+   - Ensures data durability and enables recovery from crashes.
+
+4. **Periodic Flushing**:
 
    - Ensures that in-memory data is frequently persisted to disk.
 
-4. **Server Initialization**:
+5. **Server Initialization**:
+
    - Automatically creates a `.goldb` directory in the user’s home if no custom directory is provided.
-
----
-
-## **Highlights**
-
-1. **LSM Tree Architecture:**
-
-   - Seamless integration of memtables and SSTables for efficient data management.
-
-2. **Layered Abstraction:**
-
-   - Separates concerns across components like memtables, SSTables, and the storage manager.
-
-3. **Scalability:**
-
-   - Handles large datasets with minimal performance degradation.
-
-4. **User-Friendly API:**
-   - The `engine` package abstracts complexities for an intuitive experience.
-
----
 
 ## **Contributing**
 

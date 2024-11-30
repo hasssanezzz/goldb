@@ -15,6 +15,7 @@ const MemtableSizeThreshold = 500_000 // about 126MB of memory
 type Engine struct {
 	indexMangaer   *index_manager.IndexManager
 	storageManager *storage_manager.StorageManager
+	wal            *index_manager.WAL
 }
 
 func New(homepath string) (*Engine, error) {
@@ -30,21 +31,67 @@ func New(homepath string) (*Engine, error) {
 		return nil, err
 	}
 
+	wal, err := index_manager.NewWAL(filepath.Join(homepath, "wal.log.bin"))
+	if err != nil {
+		return nil, err
+	}
+
 	e.indexMangaer = indexMangaer
 	e.storageManager = storageManager
+	e.wal = wal
 
-	return e, nil
+	return e, e.setEntriesFromWAL()
 }
 
-func (e *Engine) Set(key string, value []byte) error {
+func (e *Engine) setEntriesFromWAL() error {
+	entries, err := e.wal.ParseLogs()
+	if err != nil {
+		println("error parsing the logs")
+		return err
+	}
+
+	for _, entry := range entries {
+		if len(entry.Value) > 0 {
+			// TODO - make logging conditional
+			log.Printf("[WAL:SET] %q %X\n", entry.Key, entry.Value)
+			if err := e.Set(entry.Key, entry.Value); err != nil {
+				return err
+			}
+		} else {
+			// TODO - make logging conditional
+			log.Printf("[WAL:DEL] %q\n", entry.Key)
+			if err := e.Delete(entry.Key); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
+	// TODO - make logging conditional
+	log.Printf("[SET] %q %X\n", key, value)
+
+	// first of all, write the pair to the WAL
+	if len(ignoreWAL) == 0 {
+		if err := e.wal.Log(key, value); err != nil {
+			return err
+		}
+	}
+
 	// periodic flush, after the memtable hits its threshold
 	if e.indexMangaer.Memtable.Size >= MemtableSizeThreshold {
 		// TODO - add locks to avoid concurrency issues.
-		go func() {
+		// NOTE - I temporary removed the `go` keyword
+		func() {
 			err := e.indexMangaer.Flush()
 			if err != nil {
 				log.Println("engine periodic flush error: ", err)
 			}
+
+			// if the flush was successful, clear the WAL
+			e.wal.Clear()
 		}()
 	}
 
@@ -60,6 +107,9 @@ func (e *Engine) Set(key string, value []byte) error {
 }
 
 func (e *Engine) Get(key string) ([]byte, error) {
+	// TODO - make logging conditional
+	log.Printf("[GET] %q\n", key)
+
 	indexNode, err := e.indexMangaer.Get(key)
 	if err != nil {
 		if _, ok := err.(*index_manager.ErrKeyNotFound); ok {
@@ -80,8 +130,18 @@ func (e *Engine) Get(key string) ([]byte, error) {
 	return data, nil
 }
 
-func (e *Engine) Delete(key string) {
+func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
+	// TODO - make logging conditional
+	log.Printf("[DEL] %q\n", key)
+
+	if len(ignoreWAL) == 0 {
+		if err := e.wal.Log(key, []byte{}); err != nil {
+			return nil
+		}
+	}
+
 	e.indexMangaer.Delete(key)
+	return nil
 }
 
 func (e *Engine) Close() {

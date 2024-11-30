@@ -19,7 +19,7 @@ const SSTableNamePrefix = "sst_"
 func keyToBytes(key string) []byte {
 	// TODO fix the 0X00 string thing
 	keyByteLength := len([]byte(key))
-	paddedKey := key + strings.Repeat(string(0x0), 256-keyByteLength)
+	paddedKey := key + strings.Repeat(string("\x00"), 256-keyByteLength)
 	results := []byte(paddedKey)
 	if len(results) != 256 {
 		log.Panicf("key %q can not be padded", key)

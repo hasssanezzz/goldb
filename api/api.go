@@ -59,7 +59,12 @@ func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
-	api.DB.Delete(key)
+	err := api.DB.Delete(key)
+	if err != nil {
+		log.Printf("api: error deleting (%q): %v\n", key, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
