@@ -73,6 +73,7 @@ func (w *WAL) ParseLogs() ([]WALEntry, error) {
 	}
 
 	pairs := []WALEntry{}
+	mp := map[string][]byte{}
 
 	for {
 		keyBytes, vlength := make([]byte, 256), make([]byte, 4)
@@ -104,10 +105,12 @@ func (w *WAL) ParseLogs() ([]WALEntry, error) {
 			}
 		}
 
-		pairs = append(pairs, WALEntry{
-			Key:   strings.TrimRight(string(keyBytes), "\x00"),
-			Value: value,
-		})
+		// add to the to map not the pairs array for compaction
+		mp[strings.TrimRight(string(keyBytes), "\x00")] = value
+	}
+
+	for key, value := range mp {
+		pairs = append(pairs, WALEntry{Key: key, Value: value})
 	}
 
 	return pairs, nil
@@ -118,5 +121,5 @@ func (w *WAL) Clear() error {
 }
 
 func (w *WAL) Close() {
-	w.Close()
+	w.writer.Close()
 }

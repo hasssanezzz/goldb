@@ -24,8 +24,8 @@ Goldb is a lightweight, efficient key-value database engine that leverages the p
 - [x] Layer the DB engine with an HTTP server, like [CouchDB](https://couchdb.apache.org/).
 - [x] Manage periodic flushes.
 - [x] Implement a WAL (Write-Ahead Log).
+- [x] Make the WAL smarter by ignoring deleted set operations (Compaction).
 - [ ] Write better documentation.
-- [ ] Make the WAL smarter by ignoring deleted set operations.
 - [ ] Make logging conditional.
 - [ ] Utilze go routines.
 - [ ] Add locks to avoid concurrency issues.
