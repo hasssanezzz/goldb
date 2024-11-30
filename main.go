@@ -45,6 +45,8 @@ Options:
 		os.Exit(0)
 	}
 
+	flag.Parse()
+
 	if *source == "~/.goldb" {
 		path, err := createHomeDir()
 		if err != err {
