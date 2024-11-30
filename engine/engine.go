@@ -54,13 +54,13 @@ func (e *Engine) setEntriesFromWAL() error {
 		if len(entry.Value) > 0 {
 			// TODO - make logging conditional
 			log.Printf("[WAL:SET] %q %X\n", entry.Key, entry.Value)
-			if err := e.Set(entry.Key, entry.Value); err != nil {
+			if err := e.Set(entry.Key, entry.Value, true); err != nil {
 				return err
 			}
 		} else {
 			// TODO - make logging conditional
 			log.Printf("[WAL:DEL] %q\n", entry.Key)
-			if err := e.Delete(entry.Key); err != nil {
+			if err := e.Delete(entry.Key, true); err != nil {
 				return err
 			}
 		}
@@ -73,8 +73,11 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	// TODO - make logging conditional
 	log.Printf("[SET] %q %X\n", key, value)
 
-	// first of all, write the pair to the WAL
+	// first of all, write the pair to the WAL if not ingored.
 	if len(ignoreWAL) == 0 {
+		// when would I ignore writing to the WAL?
+		// when the I am setting KV pairs from the WAL I don't want to rewrite
+		// the pairs coming from the WAL to the WAL again.
 		if err := e.wal.Log(key, value); err != nil {
 			return err
 		}
