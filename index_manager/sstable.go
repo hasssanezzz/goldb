@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/memtable"
 )
@@ -65,14 +66,14 @@ func (s *SSTable) ParseMetadata() error {
 	if err != nil {
 		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
 	}
-	s.Meta.MinKey = string(key)
+	s.Meta.MinKey = strings.TrimRight(string(key), "\x00")
 
 	// read max key
 	_, err = s.file.Read(key)
 	if err != nil {
 		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
 	}
-	s.Meta.MaxKey = string(key)
+	s.Meta.MaxKey = strings.TrimRight(string(key), "\x00")
 
 	return nil
 }

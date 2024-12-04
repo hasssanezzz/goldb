@@ -89,6 +89,10 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 	}
 
 	for _, table := range im.sstables {
+		if table.Meta.MinKey > key || table.Meta.MaxKey < key {
+			continue
+		}
+
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*ErrKeyRemoved); ok {
