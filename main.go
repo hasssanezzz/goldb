@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/hasssanezzz/goldb-engine/api"
 )
@@ -64,9 +68,30 @@ Options:
 	mux := http.NewServeMux()
 	api.SetupRoutes(mux)
 
-	serverAddress := fmt.Sprintf("%s:%s", *host, *port)
-	log.Println("server is listening on", serverAddress)
-	if err := http.ListenAndServe(serverAddress, mux); err != nil {
-		log.Println("Error starting server:", err)
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%s", *host, *port),
+		Handler: mux,
 	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Println("server is listening on", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("error starting server: %v", err)
+		}
+	}()
+
+	<-stop
+	log.Println("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("error during server shutdown: %v", err)
+	}
+
+	log.Println("server gracefully stopped.")
 }
