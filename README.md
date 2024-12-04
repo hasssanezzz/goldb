@@ -118,69 +118,41 @@ To view the available options:
 ./goldb --help
 ```
 
-## **RESTful API**
+## API Endpoints
 
-The database engine is accessible via HTTP. Below are the available endpoints:
+All operations use custom headers for key specification.
 
-### **1. GET**
-
-Retrieve the value of a key.
-
-#### Request:
-
-```http
-GET /
-Key: <key>
+##### Set a Key-Value Pair
+```bash
+# PUT or POST to set/update a key
+curl -X POST http://localhost:3011 \
+     -H "Key: mykey" \
+     -d "myvalue"
 ```
 
-#### Response:
-
-- **200 OK**: Returns the value.
-- **400 Bad Request**: Key size is more than 256 bytes.
-- **404 Not Found**: Key does not exist.
-- **500 Internal Server Error**: Unexpected server error.
-
----
-
-### **2. POST/PUT**
-
-Insert or update a key-value pair.
-
-#### Request:
-
-```http
-POST /
-Key: <key>
-
-<body>
-<value>
-</body>
+##### Get a Value
+```bash
+# GET a value by key
+curl -X GET http://localhost:3011 \
+     -H "Key: mykey"
 ```
 
-#### Response:
-
-- **200 OK**: Returns the value.
-- **400 Bad Request**:
-  - Key size is more than 256 bytes.
-  - Can not open request body.
-- **500 Internal Server Error**: If the operation fails.
-
----
-
-### **3. DELETE**
-
-Delete a key-value pair.
-
-#### Request:
-
-```http
-DELETE /
-Key: <key>
+##### Delete a Key
+```bash
+# DELETE a key
+curl -X DELETE http://localhost:3011 \
+     -H "Key: mykey"
 ```
 
-#### Response:
+##### Scan Keys
+```bash
+# Get all keys
+curl -X GET http://localhost:3011 -H "prefix:"
 
-- **200 OK**: Key deleted successfully.
+# Get keys with a prefix
+curl -X GET http://localhost:3011 -H "prefix:user"
+```
+
 
 ## **How to Use The Engine**
 
@@ -221,11 +193,9 @@ Retrieve stored values using the `Get` method:
 
 ```go
 value, err := db.Get("key-1")
-if err != nil {
-    log.Printf("Failed to retrieve value: %v", err)
-} else {
-    log.Printf("Retrieved value: %s", value)
-}
+
+keys, err := db.Scan("user") // returns all keys starting with "user"
+keys, err := db.Scan("")     // returns all keys
 ```
 
 ### **4. Flush Data**
