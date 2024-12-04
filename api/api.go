@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/engine"
 	"github.com/hasssanezzz/goldb-engine/shared"
@@ -22,6 +23,25 @@ func New(source string) (*API, error) {
 }
 
 func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
+	// check is this is a prefix scan query
+	prefix := r.Header.Get("prefix")
+	if len(prefix) > 0 {
+		results, err := api.DB.Scan(prefix)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		stringResponse := new(strings.Builder)
+		for _, key := range results {
+			stringResponse.WriteString(key + "\n")
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(stringResponse.String()))
+		return
+	}
+
 	key := r.Header.Get("Key")
 	if len([]byte(key)) > shared.KeyByteLength {
 		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)

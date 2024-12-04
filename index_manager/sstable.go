@@ -75,13 +75,21 @@ func (s *SSTable) ParseMetadata() error {
 	return nil
 }
 
-func (s *SSTable) BSearch(key string) (memtable.IndexNode, error) {
-	keyAsBytes, err := shared.KeyToBytes(key)
-	if err != nil {
-		return memtable.IndexNode{}, err
+func (s *SSTable) Keys() ([]string, error) {
+	results := []string{}
+
+	for i := 0; i < int(s.Meta.Size); i++ {
+		pair, err := s.nthKey(i)
+		if err != nil {
+			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
+		}
+		results = append(results, pair.Key)
 	}
 
-	key = string(keyAsBytes) // I'm just a chill cs student
+	return results, nil
+}
+
+func (s *SSTable) BSearch(key string) (memtable.IndexNode, error) {
 	left, right := 0, int(s.Meta.Size-1)
 	for left <= right {
 		mid := left + (right-left)/2
@@ -139,7 +147,7 @@ func (s *SSTable) nthKey(n int) (memtable.KVPair, error) {
 	size := binary.LittleEndian.Uint32(numberBuffer)
 
 	return memtable.KVPair{
-		Key: string(keyBuffer),
+		Key: shared.TrimPaddedKey(string(keyBuffer)),
 		Value: memtable.IndexNode{
 			Offset: offset,
 			Size:   size,
