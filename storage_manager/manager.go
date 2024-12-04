@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/hasssanezzz/goldb-engine/index_manager"
 	"github.com/hasssanezzz/goldb-engine/memtable"
+	"github.com/hasssanezzz/goldb-engine/shared"
 )
 
 type StorageManager struct {
@@ -45,7 +45,7 @@ func (s *StorageManager) WriteValue(value []byte) (uint32, error) {
 
 func (s *StorageManager) ReadValue(indexNode memtable.IndexNode) ([]byte, error) {
 	if indexNode.Size == 0 {
-		return nil, &index_manager.ErrKeyNotFound{}
+		return nil, &shared.ErrKeyNotFound{}
 	}
 
 	_, err := s.reader.Seek(int64(indexNode.Offset), io.SeekStart)
