@@ -6,13 +6,12 @@ Goldb is a lightweight, efficient key-value database engine that leverages the p
 
 - [TODOs](#todos)
 - [How It Works](#how-it-works)
-  - [Setup Instructions](#setup-instructions)
-  - [Running the Server](#running-the-server)
-  - [RESTful API](#restful-api)
-  - [How to Use The Engine](#how-to-use-the-engine)
+- [Setup Instructions](#setup-instructions)
+- [Running the Server](#running-the-server)
+- [RESTful API](#restful-api)
+- [How to Use The Engine](#how-to-use-the-engine)
 - [Features](#features)
 - [Project Design](#project-design)
-- [Highlights](#highlights)
 - [Contributing](#contributing)
 
 ---
@@ -137,6 +136,7 @@ Key: <key>
 #### Response:
 
 - **200 OK**: Returns the value.
+- **400 Bad Request**: Key size is more than 256 bytes.
 - **404 Not Found**: Key does not exist.
 - **500 Internal Server Error**: Unexpected server error.
 
@@ -160,6 +160,9 @@ Key: <key>
 #### Response:
 
 - **200 OK**: Returns the value.
+- **400 Bad Request**:
+  - Key size is more than 256 bytes.
+  - Can not open request body.
 - **500 Internal Server Error**: If the operation fails.
 
 ---

@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/hasssanezzz/goldb-engine/engine"
-	"github.com/hasssanezzz/goldb-engine/index_manager"
+	"github.com/hasssanezzz/goldb-engine/shared"
 )
 
 type API struct {
@@ -23,9 +23,14 @@ func New(source string) (*API, error) {
 
 func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
+	if len([]byte(key)) > shared.KeyByteLength {
+		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+		return
+	}
+
 	data, err := api.DB.Get(key)
 	if err != nil {
-		if _, ok := err.(*index_manager.ErrKeyNotFound); ok {
+		if _, ok := err.(*shared.ErrKeyNotFound); ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -39,6 +44,11 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
+	if len([]byte(key)) > shared.KeyByteLength {
+		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+		return
+	}
+
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Unable to read body", http.StatusBadRequest)
@@ -59,6 +69,11 @@ func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
+	if len([]byte(key)) > shared.KeyByteLength {
+		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+		return
+	}
+
 	err := api.DB.Delete(key)
 	if err != nil {
 		log.Printf("api: error deleting (%q): %v\n", key, err)
