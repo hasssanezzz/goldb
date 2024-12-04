@@ -9,23 +9,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/memtable"
+	"github.com/hasssanezzz/goldb-engine/shared"
 )
 
 const SSTableNamePrefix = "sst_"
-
-func keyToBytes(key string) []byte {
-	// TODO fix the 0X00 string thing
-	keyByteLength := len([]byte(key))
-	paddedKey := key + strings.Repeat(string("\x00"), 256-keyByteLength)
-	results := []byte(paddedKey)
-	if len(results) != 256 {
-		log.Panicf("key %q can not be padded", key)
-	}
-	return results
-}
 
 type IndexManager struct {
 	Memtable   *memtable.Table
@@ -36,8 +25,8 @@ type IndexManager struct {
 
 func New(homepath string) (*IndexManager, error) {
 	im := &IndexManager{
-		path:     homepath,
 		Memtable: memtable.New(),
+		path:     homepath,
 	}
 
 	err := im.ReadTables()
@@ -83,7 +72,7 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 	if im.Memtable.Contains(key) {
 		indexNode := im.Memtable.Get(key)
 		if indexNode.Size == 0 {
-			return memtable.IndexNode{}, &ErrKeyNotFound{key}
+			return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 		}
 		return indexNode, nil
 	}
@@ -95,10 +84,10 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 
 		result, err := table.BSearch(key)
 		if err != nil {
-			if _, ok := err.(*ErrKeyRemoved); ok {
-				return memtable.IndexNode{}, &ErrKeyNotFound{key}
+			if _, ok := err.(*shared.ErrKeyRemoved); ok {
+				return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 			}
-			if _, ok := err.(*ErrKeyNotFound); !ok {
+			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
 				return memtable.IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.Meta.Serial, err)
 			}
 			continue
@@ -107,7 +96,7 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 		return result, nil
 	}
 
-	return memtable.IndexNode{}, &ErrKeyNotFound{key}
+	return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 }
 
 func (im *IndexManager) Delete(key string) {
@@ -183,18 +172,30 @@ func (im *IndexManager) serializeTree(w io.Writer, serial uint32, path string) (
 		return SSTableMetadata{}, err
 	}
 	// write min and max keys
-	_, err = w.Write(keyToBytes(metadata.MinKey))
+	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey)
 	if err != nil {
 		return SSTableMetadata{}, err
 	}
-	_, err = w.Write(keyToBytes(metadata.MaxKey))
+	_, err = w.Write(keyAsBytes)
+	if err != nil {
+		return SSTableMetadata{}, err
+	}
+	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey)
+	if err != nil {
+		return SSTableMetadata{}, err
+	}
+	_, err = w.Write(keyAsBytes)
 	if err != nil {
 		return SSTableMetadata{}, err
 	}
 
 	// write pairs
 	for _, pair := range pairs {
-		_, err = w.Write(keyToBytes(pair.Key))
+		keyAsBytes, err := shared.KeyToBytes(pair.Key)
+		if err != nil {
+			return SSTableMetadata{}, err
+		}
+		_, err = w.Write(keyAsBytes)
 		if err != nil {
 			return SSTableMetadata{}, err
 		}

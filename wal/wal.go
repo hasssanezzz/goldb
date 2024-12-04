@@ -1,4 +1,4 @@
-package index_manager
+package wal
 
 import (
 	"bytes"
@@ -7,12 +7,9 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/hasssanezzz/goldb-engine/shared"
 )
-
-type WALOperation string
-
-const WALOPSet WALOperation = "WALOPSet"
-const WALOPDelete WALOperation = "WALOPDelete"
 
 type WALEntry struct {
 	Key   string
@@ -24,7 +21,7 @@ type WAL struct {
 	writer *os.File
 }
 
-func NewWAL(source string) (*WAL, error) {
+func New(source string) (*WAL, error) {
 	w := &WAL{source: source}
 	return w, w.Open()
 }
@@ -39,7 +36,11 @@ func (w *WAL) Open() error {
 }
 
 func (w *WAL) Log(key string, value []byte) error {
-	bytesToWrite := keyToBytes(key)
+	bytesToWrite, err := shared.KeyToBytes(key)
+	if err != nil {
+		return err
+	}
+
 	valueLengthBuff := make([]byte, 4)
 	valueLength := uint32(len(value))
 	binary.LittleEndian.PutUint32(valueLengthBuff, valueLength)
@@ -51,7 +52,7 @@ func (w *WAL) Log(key string, value []byte) error {
 		bytesToWrite = append(bytesToWrite, value...)
 	}
 
-	_, err := w.writer.Write(bytesToWrite)
+	_, err = w.writer.Write(bytesToWrite)
 	if err != nil {
 		return fmt.Errorf("WAL %q can not write log: %v", w.source, err)
 	}

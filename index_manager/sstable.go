@@ -8,10 +8,8 @@ import (
 	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/memtable"
+	"github.com/hasssanezzz/goldb-engine/shared"
 )
-
-const MetadataSize = 256*2 + 4*2 // two keys + two number
-const KVPairSize = 256 + 4*2
 
 type SSTableMetadata struct {
 	Path   string
@@ -79,7 +77,12 @@ func (s *SSTable) ParseMetadata() error {
 }
 
 func (s *SSTable) BSearch(key string) (memtable.IndexNode, error) {
-	key = string(keyToBytes(key)) // I'm just a cs student
+	keyAsBytes, err := shared.KeyToBytes(key)
+	if err != nil {
+		return memtable.IndexNode{}, err
+	}
+
+	key = string(keyAsBytes) // I'm just a chill cs student
 	left, right := 0, int(s.Meta.Size-1)
 	for left <= right {
 		mid := left + (right-left)/2
@@ -94,14 +97,14 @@ func (s *SSTable) BSearch(key string) (memtable.IndexNode, error) {
 			right = mid - 1
 		} else {
 			if pair.Value.Size == 0 {
-				return memtable.IndexNode{}, &ErrKeyRemoved{Key: key}
+				return memtable.IndexNode{}, &shared.ErrKeyRemoved{Key: key}
 			} else {
 				return pair.Value, nil
 			}
 		}
 	}
 
-	return memtable.IndexNode{}, &ErrKeyNotFound{Key: key}
+	return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 }
 
 func (s *SSTable) Close() error {
@@ -109,7 +112,7 @@ func (s *SSTable) Close() error {
 }
 
 func (s *SSTable) nthKey(n int) (memtable.KVPair, error) {
-	position := int64(MetadataSize + n*KVPairSize)
+	position := int64(shared.MetadataSize + n*shared.KVPairSize)
 	_, err := s.file.Seek(position, io.SeekStart)
 	if err != nil {
 		return memtable.KVPair{}, fmt.Errorf("sstable %q can not seek position %d: %v", s.Meta.Path, position, err)
