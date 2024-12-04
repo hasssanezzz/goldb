@@ -13,3 +13,7 @@ func KeyToBytes(key string) ([]byte, error) {
 	}
 	return results, nil
 }
+
+func TrimPaddedKey(key string) string {
+	return strings.TrimRight(key, "\x00")
+}

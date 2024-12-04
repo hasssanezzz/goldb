@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/shared"
 )
@@ -107,7 +106,7 @@ func (w *WAL) ParseLogs() ([]WALEntry, error) {
 		}
 
 		// add to the to map not the pairs array for compaction
-		mp[strings.TrimRight(string(keyBytes), "\x00")] = value
+		mp[shared.TrimPaddedKey(string(keyBytes))] = value
 	}
 
 	for key, value := range mp {
