@@ -181,9 +181,6 @@ func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
 }
 
 func (e *Engine) Close() {
-	if e.indexManager.Memtable.Size > 0 {
-		e.indexManager.Flush()
-	}
 	e.indexManager.Close()
 	e.storageManager.Close()
 }
