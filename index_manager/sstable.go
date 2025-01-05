@@ -11,7 +11,7 @@ import (
 	"github.com/hasssanezzz/goldb-engine/shared"
 )
 
-type SSTableMetadata struct {
+type TableMetadata struct {
 	Path   string
 	Serial uint32
 	Size   uint32
@@ -20,8 +20,9 @@ type SSTableMetadata struct {
 }
 
 type SSTable struct {
-	Meta SSTableMetadata
-	file *os.File
+	Meta  TableMetadata
+	file  *os.File
+	level int
 }
 
 func NewSSTable(path string, serial int) *SSTable {

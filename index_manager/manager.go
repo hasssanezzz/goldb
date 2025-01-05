@@ -14,19 +14,19 @@ import (
 	"github.com/hasssanezzz/goldb-engine/shared"
 )
 
-const SSTableNamePrefix = "sst_"
-
 type IndexManager struct {
 	Memtable   *memtable.Table
 	path       string
 	currSerial int
 	sstables   []*SSTable
+	levels     []*SSTable
 }
 
 func New(homepath string) (*IndexManager, error) {
 	im := &IndexManager{
-		Memtable: memtable.New(),
-		path:     homepath,
+		Memtable:   memtable.New(),
+		path:       homepath,
+		currSerial: 1, // starting from one to reserve number zero
 	}
 
 	err := im.ReadTables()
@@ -45,7 +45,38 @@ func (im *IndexManager) ReadTables() error {
 
 	for _, file := range files {
 		name := file.Name()
-		if !(len(name) > 4 && name[:4] == SSTableNamePrefix) {
+		if !(len(name) > 4 && name[:4] == shared.SSTableNamePrefix) {
+			continue
+		}
+
+		serial, err := strconv.Atoi(name[4:])
+		if err != nil {
+			continue
+		}
+
+		err = im.parseSSTable(serial)
+		if err != nil {
+			return fmt.Errorf("index manager can not parse sstable %d: %v", serial, err)
+		}
+		im.currSerial++
+	}
+
+	if len(im.sstables) > 1 {
+		im.sortSSTablesBySerial()
+	}
+
+	return nil
+}
+
+func (im *IndexManager) ReadLevels() error {
+	files, err := os.ReadDir(im.path)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		name := file.Name()
+		if !(len(name) > 4 && name[:4] == shared.LevelFileNamePrefix) {
 			continue
 		}
 
@@ -104,7 +135,7 @@ func (im *IndexManager) Delete(key string) {
 }
 
 func (im *IndexManager) Flush() error {
-	path := filepath.Join(im.path, fmt.Sprintf(SSTableNamePrefix+"%d", im.currSerial))
+	path := filepath.Join(im.path, fmt.Sprintf(shared.SSTableNamePrefix+"%d", im.currSerial))
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -138,10 +169,18 @@ func (im *IndexManager) Close() {
 	}
 }
 
-// private functions
+func (im *IndexManager) CompactionCheck() error {
+	if len(im.sstables) <= shared.MaxSSTableCount {
+		return nil
+	}
+
+	// ...
+
+	return nil
+}
 
 func (im *IndexManager) parseSSTable(serial int) error {
-	table := NewSSTable(filepath.Join(im.path, fmt.Sprintf("%s%d", SSTableNamePrefix, serial)), serial)
+	table := NewSSTable(filepath.Join(im.path, fmt.Sprintf("%s%d", shared.SSTableNamePrefix, serial)), serial)
 	err := table.Open()
 	if err != nil {
 		return err
@@ -151,9 +190,9 @@ func (im *IndexManager) parseSSTable(serial int) error {
 	return nil
 }
 
-func (im *IndexManager) serializeTree(w io.Writer, serial uint32, path string) (SSTableMetadata, error) {
+func (im *IndexManager) serializeTree(w io.Writer, serial uint32, path string) (TableMetadata, error) {
 	pairs := im.Memtable.Items()
-	metadata := SSTableMetadata{
+	metadata := TableMetadata{
 		Path:   path,
 		Size:   uint32(len(pairs)),
 		Serial: serial,
@@ -164,48 +203,48 @@ func (im *IndexManager) serializeTree(w io.Writer, serial uint32, path string) (
 	// SSTable serial number
 	err := binary.Write(w, binary.LittleEndian, serial)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 	// pair count
 	err = binary.Write(w, binary.LittleEndian, metadata.Size)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 	// write min and max keys
 	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 	_, err = w.Write(keyAsBytes)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 	_, err = w.Write(keyAsBytes)
 	if err != nil {
-		return SSTableMetadata{}, err
+		return TableMetadata{}, err
 	}
 
 	// write pairs
 	for _, pair := range pairs {
 		keyAsBytes, err := shared.KeyToBytes(pair.Key)
 		if err != nil {
-			return SSTableMetadata{}, err
+			return TableMetadata{}, err
 		}
 		_, err = w.Write(keyAsBytes)
 		if err != nil {
-			return SSTableMetadata{}, err
+			return TableMetadata{}, err
 		}
 		err = binary.Write(w, binary.LittleEndian, pair.Value.Offset)
 		if err != nil {
-			return SSTableMetadata{}, err
+			return TableMetadata{}, err
 		}
 		err = binary.Write(w, binary.LittleEndian, pair.Value.Size)
 		if err != nil {
-			return SSTableMetadata{}, err
+			return TableMetadata{}, err
 		}
 	}
 

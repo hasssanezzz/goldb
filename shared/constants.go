@@ -5,8 +5,11 @@ import "fmt"
 const KeyByteLength = 256
 const MetadataSize = KeyByteLength*2 + 4*2
 const KVPairSize = KeyByteLength + 4*2
-const MemtableSizeThreshold = 119_155 // about 30MB
+const MemtableSizeThreshold = 500 // for now
 const SSTableExpectedSize = MetadataSize + MemtableSizeThreshold*KVPairSize
+const SSTableNamePrefix = "sst_"
+const LevelFileNamePrefix = "lvl_"
+const MaxSSTableCount = 10 // for now
 
 type ErrKeyTooLong struct{ Key string }
 
