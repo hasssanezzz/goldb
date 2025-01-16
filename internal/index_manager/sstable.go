@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/hasssanezzz/goldb-engine/memtable"
-	"github.com/hasssanezzz/goldb-engine/shared"
+	"github.com/hasssanezzz/goldb/internal/memtable"
+	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
 type TableMetadata struct {

@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/hasssanezzz/goldb-engine/memtable"
-	"github.com/hasssanezzz/goldb-engine/shared"
+	"github.com/hasssanezzz/goldb/internal/memtable"
+	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
 type IndexManager struct {

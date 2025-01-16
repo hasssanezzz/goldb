@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/hasssanezzz/goldb-engine/shared"
+	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
 type WALEntry struct {

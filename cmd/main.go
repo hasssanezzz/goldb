@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hasssanezzz/goldb-engine/api"
+	"github.com/hasssanezzz/goldb/cmd/api"
 )
 
 func createHomeDir() (string, error) {

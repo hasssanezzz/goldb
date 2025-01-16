@@ -1,4 +1,4 @@
-package engine
+package goldb
 
 import (
 	"fmt"
@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hasssanezzz/goldb-engine/index_manager"
-	"github.com/hasssanezzz/goldb-engine/memtable"
-	"github.com/hasssanezzz/goldb-engine/shared"
-	"github.com/hasssanezzz/goldb-engine/storage_manager"
-	"github.com/hasssanezzz/goldb-engine/wal"
+	"github.com/hasssanezzz/goldb/internal/index_manager"
+	"github.com/hasssanezzz/goldb/internal/memtable"
+	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/internal/storage_manager"
+	"github.com/hasssanezzz/goldb/internal/wal"
 )
 
 type Engine struct {

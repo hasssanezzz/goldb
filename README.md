@@ -66,7 +66,7 @@ Goldb is built around the **LSM tree**, a modern data structure optimized for wr
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/hasssanezzz/goldb-engine.git
+   git clone https://github.com/hasssanezzz/goldb.git
    cd goldb-engine
    ```
 
@@ -165,7 +165,7 @@ package main
 
 import (
     "log"
-    "github.com/hasssanezzz/goldb-engine/engine"
+    "github.com/hasssanezzz/goldb/engine"
 )
 
 func main() {

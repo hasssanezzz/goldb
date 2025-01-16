@@ -6,16 +6,16 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hasssanezzz/goldb-engine/engine"
-	"github.com/hasssanezzz/goldb-engine/shared"
+	"github.com/hasssanezzz/goldb"
+	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
 type API struct {
-	DB *engine.Engine
+	DB *goldb.Engine
 }
 
 func New(source string) (*API, error) {
-	db, err := engine.New(source)
+	db, err := goldb.New(source)
 	if err != nil {
 		return nil, err
 	}
