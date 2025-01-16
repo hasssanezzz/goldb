@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/hasssanezzz/goldb-engine/index_manager"
 	"github.com/hasssanezzz/goldb-engine/memtable"
@@ -67,6 +68,27 @@ func (e *Engine) setEntriesFromWAL() error {
 	}
 
 	return nil
+}
+
+func (e *Engine) Scan(pattern string) ([]string, error) {
+	keys, err := e.indexManager.Keys(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	// if not pattern exists, return all the keys
+	if len(pattern) == 0 {
+		return keys, nil
+	}
+
+	results := []string{}
+	for _, key := range keys {
+		if strings.HasPrefix(key, pattern) {
+			results = append(results, key)
+		}
+	}
+
+	return results, nil
 }
 
 func (e *Engine) Get(key string) ([]byte, error) {
@@ -159,9 +181,6 @@ func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
 }
 
 func (e *Engine) Close() {
-	if e.indexManager.Memtable.Size > 0 {
-		e.indexManager.Flush()
-	}
 	e.indexManager.Close()
 	e.storageManager.Close()
 }

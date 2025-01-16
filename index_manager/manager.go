@@ -163,6 +163,32 @@ func (im *IndexManager) Flush() error {
 	return nil
 }
 
+func (im *IndexManager) Keys(pattern string) ([]string, error) {
+	final := map[string]struct{}{}
+
+	for _, table := range im.sstables {
+		keys, err := table.Keys()
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			final[key] = struct{}{}
+		}
+	}
+
+	memtablePairs := im.Memtable.Items()
+	for _, pair := range memtablePairs {
+		final[pair.Key] = struct{}{}
+	}
+
+	results := []string{}
+	for key := range final {
+		results = append(results, key)
+	}
+
+	return results, nil
+}
+
 func (im *IndexManager) Close() {
 	for _, table := range im.sstables {
 		table.Close()
