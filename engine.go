@@ -22,7 +22,7 @@ type Engine struct {
 func New(homepath string) (*Engine, error) {
 	e := &Engine{}
 
-	indexMangaer, err := index_manager.New(homepath)
+	indexManager, err := index_manager.New(homepath)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func New(homepath string) (*Engine, error) {
 		return nil, err
 	}
 
-	e.indexManager = indexMangaer
+	e.indexManager = indexManager
 	e.storageManager = storageManager
 	e.wal = wal
 

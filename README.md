@@ -24,35 +24,13 @@ Goldb is a lightweight, efficient key-value database engine that leverages the p
 - [x] Manage periodic flushes.
 - [x] Implement a WAL (Write-Ahead Log).
 - [x] Make the WAL smarter by ignoring deleted set operations (Compaction).
+- [x] Use a compaction algorithm and perform compaction periodically.
 - [ ] Write better documentation.
 - [ ] Make logging conditional.
 - [ ] Utilze go routines.
-- [ ] Add locks to avoid concurrency issues.
-- [ ] Use a compaction algorithm and perform compaction periodically.
 - [ ] Add the use of bloom filters.
 
 ---
-
-## **How It Works**
-
-Goldb is built around the **LSM tree**, a modern data structure optimized for write-heavy workloads. Here’s how it operates:
-
-1. **In-Memory Data Handling (Memtable):**
-
-   - Data is first written to an in-memory AVL tree, acting as the **active layer** of the LSM tree.
-   - The memtable ensures fast writes and lookups, maintaining sorted data for efficient flushing.
-
-2. **Persistent Storage (SSTables):**
-
-   - When the memtable reaches a size limit, its contents are flushed to disk as **Sorted String Tables (SSTables)**.
-   - SSTables are immutable and sorted, enabling efficient binary search operations during reads.
-
-3. **Storage Management:**
-
-   - The engine manages the lifecycle of SSTables, including merging and compaction, ensuring that older tables are consolidated into fewer, larger ones to optimize performance.
-
-4. **High-Level API:**
-   - The `engine` package provides an easy-to-use interface for storing, retrieving, and deleting key-value pairs, while abstracting the complexities of the LSM tree.
 
 ## **Setup Instructions**
 
@@ -123,6 +101,7 @@ To view the available options:
 All operations use custom headers for key specification.
 
 ##### Set a Key-Value Pair
+
 ```bash
 # PUT or POST to set/update a key
 curl -X POST http://localhost:3011 \
@@ -131,6 +110,7 @@ curl -X POST http://localhost:3011 \
 ```
 
 ##### Get a Value
+
 ```bash
 # GET a value by key
 curl -X GET http://localhost:3011 \
@@ -138,6 +118,7 @@ curl -X GET http://localhost:3011 \
 ```
 
 ##### Delete a Key
+
 ```bash
 # DELETE a key
 curl -X DELETE http://localhost:3011 \
@@ -145,6 +126,7 @@ curl -X DELETE http://localhost:3011 \
 ```
 
 ##### Scan Keys
+
 ```bash
 # Get all keys
 curl -X GET http://localhost:3011 -H "prefix:"
@@ -152,7 +134,6 @@ curl -X GET http://localhost:3011 -H "prefix:"
 # Get keys with a prefix
 curl -X GET http://localhost:3011 -H "prefix:user"
 ```
-
 
 ## **How to Use The Engine**
 
@@ -212,6 +193,7 @@ if err != nil {
 ### **5. Delete Data**
 
 Remove a key-value pair using the `Delete` method:
+v
 
 ```go
 if err := db.Delete("key-1"); err != nil {
@@ -220,53 +202,6 @@ if err := db.Delete("key-1"); err != nil {
 ```
 
 ---
-
-## **Features**
-
-- **Powered by LSM-Tree:**
-
-  - Combines in-memory writes and immutable SSTables for fast and efficient storage.
-  - Supports write-heavy workloads while maintaining read efficiency.
-
-- **Write Optimization:**
-
-  - In-memory AVL tree ensures quick inserts and updates.
-  - Periodic flushing to SSTables ensures data persistence.
-
-- **Read Optimization:**
-
-  - Binary search through sorted SSTables for efficient lookups.
-  - Recently written data is quickly accessible in memory.
-
-- **Persistence and Recovery:**
-  - **Write-Ahead Log (WAL)**: Ensures durability and enables crash recovery by logging all writes before they are applied to the in-memory structure.
-  - Durable storage with immutable SSTables.
-  - [Will do] Optimized disk usage through compaction of older SSTables.
-
-## **Project Design**
-
-1. **API Layer**:
-
-   - Implements HTTP endpoints using the `api` package.
-   - Maps HTTP requests to database operations (e.g., GET, POST, DELETE).
-
-2. **Engine Layer**:
-
-   - Manages in-memory storage, SSTables, and compaction.
-   - Provides a clean interface for database operations.
-
-3. **Write-Ahead Log (WAL)**:
-
-   - Logs all write operations before applying them to in-memory structures.
-   - Ensures data durability and enables recovery from crashes.
-
-4. **Periodic Flushing**:
-
-   - Ensures that in-memory data is frequently persisted to disk.
-
-5. **Server Initialization**:
-
-   - Automatically creates a `.goldb` directory in the user’s home if no custom directory is provided.
 
 ## **Contributing**
 
