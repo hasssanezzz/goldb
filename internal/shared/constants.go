@@ -5,7 +5,7 @@ import "fmt"
 const KeyByteLength = 256
 const MetadataSize = KeyByteLength*2 + 4*2
 const KVPairSize = KeyByteLength + 4*2
-const MemtableSizeThreshold = 500 // for now
+const MemtableSizeThreshold = 1000 // for now
 const SSTableExpectedSize = MetadataSize + MemtableSizeThreshold*KVPairSize
 const SSTableNamePrefix = "sst_"
 const LevelFileNamePrefix = "lvl_"

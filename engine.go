@@ -146,6 +146,11 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 			// if the flush was successful, clear the WAL
 			e.wal.Clear()
 		}()
+
+		err := e.indexManager.CompactionCheck()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	offset, err := e.storageManager.WriteValue(value)

@@ -18,6 +18,12 @@ type KVPair struct {
 	Value IndexNode
 }
 
+type KVPairSlice []KVPair
+
+func (a KVPairSlice) Len() int           { return len(a) }
+func (a KVPairSlice) Less(i, j int) bool { return a[i].Key < a[j].Key }
+func (a KVPairSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
 type IndexNode struct {
 	Offset uint32
 	Size   uint32

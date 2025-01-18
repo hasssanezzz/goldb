@@ -19,9 +19,8 @@ type TableMetadata struct {
 }
 
 type SSTable struct {
-	Meta  TableMetadata
-	file  *os.File
-	level int
+	Meta TableMetadata
+	file *os.File
 }
 
 func NewSSTable(path string, serial int) *SSTable {
@@ -85,6 +84,20 @@ func (s *SSTable) Keys() ([]string, error) {
 			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
 		}
 		results = append(results, pair.Key)
+	}
+
+	return results, nil
+}
+
+func (s *SSTable) KVPairs() ([]memtable.KVPair, error) {
+	results := []memtable.KVPair{}
+
+	for i := 0; i < int(s.Meta.Size); i++ {
+		pair, err := s.nthKey(i)
+		if err != nil {
+			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
+		}
+		results = append(results, pair)
 	}
 
 	return results, nil
