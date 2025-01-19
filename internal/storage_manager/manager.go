@@ -10,8 +10,8 @@ import (
 )
 
 type StorageManager struct {
-	writer   *os.File
-	reader   *os.File
+	writer   shared.WriteSeekCloser
+	reader   io.ReadSeekCloser
 	filename string
 }
 
@@ -36,6 +36,10 @@ func (s *StorageManager) Open() error {
 
 func (s *StorageManager) WriteValue(value []byte) (uint32, error) {
 	offset, err := s.writer.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, fmt.Errorf("storage manager can not seek to end: %v", err)
+	}
+
 	_, err = s.writer.Write(value)
 	if err != nil {
 		return 0, fmt.Errorf("storage manager can not write value %q: %v", value, err)

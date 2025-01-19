@@ -11,30 +11,35 @@ import (
 )
 
 type TableMetadata struct {
-	Path   string
-	Serial uint32
-	Size   uint32
-	MinKey string
-	MaxKey string
+	Path    string
+	IsLevel bool
+	Serial  uint32
+	Size    uint32
+	MinKey  string
+	MaxKey  string
 }
 
 type SSTable struct {
-	Meta   TableMetadata
-	config *shared.EngineConfig
-	file   *os.File
+	metadata TableMetadata
+	config   *shared.EngineConfig
+	file     io.ReadSeekCloser
 }
 
-func NewSSTable(path string, serial int, config *shared.EngineConfig) *SSTable {
+func NewSSTable(metadata TableMetadata, config *shared.EngineConfig) (*SSTable, error) {
 	table := &SSTable{config: config}
-	table.Meta.Path = path
-	table.Meta.Serial = uint32(serial)
-	return table
+	table.metadata = metadata
+
+	if err := table.open(); err != nil {
+		return nil, err
+	}
+
+	return table, nil
 }
 
-func (s *SSTable) Open() error {
-	file, err := os.Open(s.Meta.Path)
+func (s *SSTable) open() error {
+	file, err := os.Open(s.metadata.Path)
 	if err != nil {
-		return fmt.Errorf("can not open sstable %q: %v", s.Meta.Path, err)
+		return fmt.Errorf("can not open sstable %q: %v", s.metadata.Path, err)
 	}
 	s.file = file
 	s.ParseMetadata()
@@ -42,36 +47,44 @@ func (s *SSTable) Open() error {
 }
 
 func (s *SSTable) ParseMetadata() error {
-	buf := make([]byte, shared.UintSize)
-	key := make([]byte, s.config.KeySize)
+	uintBuffer := make([]byte, shared.UintSize)
+	keyBuffer := make([]byte, s.config.KeySize)
+
+	// read isLevel
+	isLevelBuffer := make([]byte, 1)
+	_, err := s.file.Read(isLevelBuffer)
+	if err != nil {
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
+	}
+	s.metadata.IsLevel = isLevelBuffer[0] == 0xFF
 
 	// read serial
-	_, err := s.file.Read(buf)
+	_, err = s.file.Read(uintBuffer)
 	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
 	}
-	s.Meta.Serial = binary.LittleEndian.Uint32(buf)
+	s.metadata.Serial = binary.LittleEndian.Uint32(uintBuffer)
 
 	// read pair count
-	_, err = s.file.Read(buf)
+	_, err = s.file.Read(uintBuffer)
 	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
 	}
-	s.Meta.Size = binary.LittleEndian.Uint32(buf)
+	s.metadata.Size = binary.LittleEndian.Uint32(uintBuffer)
 
 	// read min key
-	_, err = s.file.Read(key)
+	_, err = s.file.Read(keyBuffer)
 	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
 	}
-	s.Meta.MinKey = shared.TrimPaddedKey(string(key))
+	s.metadata.MinKey = shared.TrimPaddedKey(string(keyBuffer))
 
 	// read max key
-	_, err = s.file.Read(key)
+	_, err = s.file.Read(keyBuffer)
 	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.Meta.Path, err)
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
 	}
-	s.Meta.MaxKey = shared.TrimPaddedKey(string(key))
+	s.metadata.MaxKey = shared.TrimPaddedKey(string(keyBuffer))
 
 	return nil
 }
@@ -79,7 +92,7 @@ func (s *SSTable) ParseMetadata() error {
 func (s *SSTable) Keys() ([]string, error) {
 	results := []string{}
 
-	for i := 0; i < int(s.Meta.Size); i++ {
+	for i := 0; i < int(s.metadata.Size); i++ {
 		pair, err := s.nthKey(i)
 		if err != nil {
 			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
@@ -93,7 +106,7 @@ func (s *SSTable) Keys() ([]string, error) {
 func (s *SSTable) KVPairs() ([]memtable.KVPair, error) {
 	results := []memtable.KVPair{}
 
-	for i := 0; i < int(s.Meta.Size); i++ {
+	for i := 0; i < int(s.metadata.Size); i++ {
 		pair, err := s.nthKey(i)
 		if err != nil {
 			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
@@ -105,12 +118,12 @@ func (s *SSTable) KVPairs() ([]memtable.KVPair, error) {
 }
 
 func (s *SSTable) BSearch(key string) (memtable.IndexNode, error) {
-	left, right := 0, int(s.Meta.Size-1)
+	left, right := 0, int(s.metadata.Size-1)
 	for left <= right {
 		mid := left + (right-left)/2
 		pair, err := s.nthKey(mid)
 		if err != nil {
-			return memtable.IndexNode{}, fmt.Errorf("sstable %q can not perform bsearch gettting the %dth key: %v", s.Meta.Path, mid, err)
+			return memtable.IndexNode{}, fmt.Errorf("sstable %q can not perform bsearch gettting the %dth key: %v", s.metadata.Path, mid, err)
 		}
 
 		if pair.Key < key {
@@ -137,7 +150,7 @@ func (s *SSTable) nthKey(n int) (memtable.KVPair, error) {
 	position := int64(int(s.config.GetMetadataSize()) + n*int(s.config.GetKVPairSize()))
 	_, err := s.file.Seek(position, io.SeekStart)
 	if err != nil {
-		return memtable.KVPair{}, fmt.Errorf("sstable %q can not seek position %d: %v", s.Meta.Path, position, err)
+		return memtable.KVPair{}, fmt.Errorf("sstable %q can not seek position %d: %v", s.metadata.Path, position, err)
 	}
 
 	keyBuffer := make([]byte, s.config.KeySize)

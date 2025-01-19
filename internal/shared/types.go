@@ -1,6 +1,8 @@
 package shared
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const UintSize = 4
 
@@ -10,7 +12,7 @@ type ErrKeyTooLong struct {
 }
 
 func (e *ErrKeyTooLong) Error() string {
-	return fmt.Sprintf("key %q size exceeded", e.Key, e.KeySize)
+	return fmt.Sprintf("key %q exceeded max key size %d", e.Key, e.KeySize)
 }
 
 type ErrKeyNotFound struct{ Key string }
