@@ -213,7 +213,12 @@ func (t *Table) Get(key string) IndexNode {
 }
 
 func (t *Table) Delete(key string) {
+	// TODO this needs to be checked
 	if !t.Contains(key) {
+		t.Set(key, IndexNode{
+			Offset: 0,
+			Size:   0,
+		})
 		return
 	}
 

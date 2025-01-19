@@ -19,12 +19,13 @@ type TableMetadata struct {
 }
 
 type SSTable struct {
-	Meta TableMetadata
-	file *os.File
+	Meta   TableMetadata
+	config *shared.EngineConfig
+	file   *os.File
 }
 
-func NewSSTable(path string, serial int) *SSTable {
-	table := &SSTable{}
+func NewSSTable(path string, serial int, config *shared.EngineConfig) *SSTable {
+	table := &SSTable{config: config}
 	table.Meta.Path = path
 	table.Meta.Serial = uint32(serial)
 	return table
@@ -41,8 +42,8 @@ func (s *SSTable) Open() error {
 }
 
 func (s *SSTable) ParseMetadata() error {
-	buf := make([]byte, 4)
-	key := make([]byte, 256)
+	buf := make([]byte, shared.UintSize)
+	key := make([]byte, s.config.KeySize)
 
 	// read serial
 	_, err := s.file.Read(buf)
@@ -133,14 +134,14 @@ func (s *SSTable) Close() error {
 }
 
 func (s *SSTable) nthKey(n int) (memtable.KVPair, error) {
-	position := int64(shared.MetadataSize + n*shared.KVPairSize)
+	position := int64(int(s.config.GetMetadataSize()) + n*int(s.config.GetKVPairSize()))
 	_, err := s.file.Seek(position, io.SeekStart)
 	if err != nil {
 		return memtable.KVPair{}, fmt.Errorf("sstable %q can not seek position %d: %v", s.Meta.Path, position, err)
 	}
 
-	keyBuffer := make([]byte, 256)
-	numberBuffer := make([]byte, 4)
+	keyBuffer := make([]byte, s.config.KeySize)
+	numberBuffer := make([]byte, shared.UintSize)
 
 	// read key string
 	_, err = s.file.Read(keyBuffer)

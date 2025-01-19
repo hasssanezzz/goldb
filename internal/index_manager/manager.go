@@ -1,3 +1,9 @@
+// Package index_manager manages the indexing and organization of SSTables and levels.
+// It provides functionality for key lookups, flushing the memtable to disk as SSTables,
+// and performing compaction to merge SSTables into levels.
+//
+// The package is inspired by LSM-tree principles, ensuring efficient write and read
+// operations for key-value storage systems.
 package index_manager
 
 import (
@@ -14,19 +20,24 @@ import (
 	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
+// IndexManager handles the indexing of keys across the memtable, SSTables, and levels.
+// It ensures that keys are efficiently located and manages the compaction process.
 type IndexManager struct {
-	Memtable   *memtable.Table
-	path       string
-	currSerial int
-	lvlSerial  int
-	sstables   []*SSTable
-	levels     []*SSTable // a level is just a big sstable
+	Config     *shared.EngineConfig
+	Memtable   *memtable.Table // In-memory AVL tree for temporary storage.
+	currSerial int             // Current serial number for SSTables.
+	lvlSerial  int             // Current serial number for levels.
+	sstables   []*SSTable      // List of SSTables on disk.
+	levels     []*SSTable      // List of levels (merged SSTables).
 }
 
-func New(homepath string) (*IndexManager, error) {
+// New initializes a new IndexManager with the given homepath.
+// It reads existing SSTables and levels from disk and prepares the memtable for writes.
+// Returns an error if the directory cannot be accessed or if SSTables cannot be parsed.
+func New(config *shared.EngineConfig) (*IndexManager, error) {
 	im := &IndexManager{
+		Config:     config,
 		Memtable:   memtable.New(),
-		path:       homepath,
 		currSerial: 1, // starting from one to reserve number zero
 		lvlSerial:  1, // level 0 for SSTables only
 	}
@@ -44,19 +55,22 @@ func New(homepath string) (*IndexManager, error) {
 	return im, nil
 }
 
+// ReadTables reads all SSTables from the directory and parses them into memory.
+// It updates the list of SSTables and the current serial number.
+// Returns an error if any SSTable cannot be parsed.
 func (im *IndexManager) ReadTables() error {
-	files, err := os.ReadDir(im.path)
+	files, err := os.ReadDir(im.Config.Homepath)
 	if err != nil {
 		return err
 	}
 
 	for _, file := range files {
 		name := file.Name()
-		if !(len(name) > 4 && name[:4] == shared.SSTableNamePrefix) {
+		if !(len(name) > len(im.Config.SSTableNamePrefix) && name[:len(im.Config.SSTableNamePrefix)] == im.Config.SSTableNamePrefix) {
 			continue
 		}
 
-		serial, err := strconv.Atoi(name[4:])
+		serial, err := strconv.Atoi(name[len(im.Config.SSTableNamePrefix):])
 		if err != nil {
 			continue
 		}
@@ -75,19 +89,22 @@ func (im *IndexManager) ReadTables() error {
 	return nil
 }
 
+// ReadLevels reads all levels from the directory and parses them into memory.
+// It updates the list of levels and the level serial number.
+// Returns an error if any level cannot be parsed.
 func (im *IndexManager) ReadLevels() error {
-	files, err := os.ReadDir(im.path)
+	files, err := os.ReadDir(im.Config.Homepath)
 	if err != nil {
 		return err
 	}
 
 	for _, file := range files {
 		name := file.Name()
-		if !(len(name) > 4 && name[:4] == shared.LevelFileNamePrefix) {
+		if !(len(name) > len(im.Config.LevelFileNamePrefix) && name[:len(im.Config.LevelFileNamePrefix)] == im.Config.LevelFileNamePrefix) {
 			continue
 		}
 
-		serial, err := strconv.Atoi(name[4:])
+		serial, err := strconv.Atoi(name[len(im.Config.LevelFileNamePrefix):])
 		if err != nil {
 			continue
 		}
@@ -106,6 +123,9 @@ func (im *IndexManager) ReadLevels() error {
 	return nil
 }
 
+// Get retrieves the IndexNode for the given key.
+// It searches the memtable, SSTables, and levels in order of recency.
+// Returns ErrKeyNotFound if the key does not exist.
 func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 
 	// 1. search in the memtable
@@ -160,12 +180,17 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 	return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 }
 
+// Delete marks the given key as deleted in the memtable.
+// The key will be removed during the next flush or compaction.
 func (im *IndexManager) Delete(key string) {
 	im.Memtable.Set(key, memtable.IndexNode{})
 }
 
+// Flush writes the contents of the memtable to disk as a new SSTable.
+// It resets the memtable and updates the list of SSTables.
+// Returns an error if the SSTable cannot be created or written.
 func (im *IndexManager) Flush() error {
-	path := filepath.Join(im.path, fmt.Sprintf(shared.SSTableNamePrefix+"%d", im.currSerial))
+	path := filepath.Join(im.Config.Homepath, fmt.Sprintf(im.Config.SSTableNamePrefix+"%d", im.currSerial))
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -189,7 +214,7 @@ func (im *IndexManager) Flush() error {
 	// reset the memtable after successfully serializing it
 	im.Memtable = memtable.New()
 
-	newSSTable := NewSSTable(path, im.currSerial)
+	newSSTable := NewSSTable(path, im.currSerial, im.Config)
 	newSSTable.Meta = metadata
 	newSSTable.Open()
 
@@ -202,7 +227,11 @@ func (im *IndexManager) Flush() error {
 	return nil
 }
 
-func (im *IndexManager) Keys(pattern string) ([]string, error) {
+// Keys returns a list of all keys in the database.
+// It includes keys from the memtable, SSTables, and levels.
+// Returns an error if any SSTable or level cannot be read.
+func (im *IndexManager) Keys() ([]string, error) {
+	// TODO get keys from levels
 	final := map[string]struct{}{}
 
 	for _, table := range im.sstables {
@@ -228,22 +257,38 @@ func (im *IndexManager) Keys(pattern string) ([]string, error) {
 	return results, nil
 }
 
-func (im *IndexManager) Close() {
+// Close closes all open SSTables and levels.
+func (im *IndexManager) Close() error {
 	for _, table := range im.sstables {
-		table.Close()
+		if err := table.Close(); err != nil {
+			return err
+		}
 	}
+
+	for _, level := range im.levels {
+		if err := level.Close(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
+// CompactionCheck checks if the number of SSTables exceeds the threshold.
+// If so, it triggers compaction to merge SSTables into a single level.
+// Returns an error if compaction fails.
 func (im *IndexManager) CompactionCheck() error {
-	if len(im.sstables) <= shared.MaxSSTableCount {
+	if len(im.sstables) <= int(im.Config.CompactionThreshold) {
 		return nil
 	}
 
 	return im.createLevel()
 }
 
+// createLevel merges all SSTables into a single level and deletes the original SSTables.
+// Returns an error if the level cannot be created or written.
 func (im *IndexManager) createLevel() error {
-	path := filepath.Join(im.path, fmt.Sprintf(shared.LevelFileNamePrefix+"%d", im.lvlSerial))
+	path := filepath.Join(im.Config.Homepath, fmt.Sprintf(im.Config.LevelFileNamePrefix+"%d", im.lvlSerial))
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -269,7 +314,7 @@ func (im *IndexManager) createLevel() error {
 	}
 
 	// create a new level
-	level := NewSSTable(path, im.lvlSerial)
+	level := NewSSTable(path, im.lvlSerial, im.Config)
 	level.Meta = metadata
 	level.Open()
 	im.lvlSerial++
@@ -290,6 +335,9 @@ func (im *IndexManager) createLevel() error {
 	return nil
 }
 
+// getAllUniquePairs retrieves all unique key-value pairs from SSTables.
+// It removes duplicates and deleted keys.
+// Returns an error if any SSTable cannot be read.
 func (im *IndexManager) getAllUniquePairs() ([]memtable.KVPair, error) {
 	mp := map[string]*memtable.KVPair{}
 	for _, table := range im.sstables {
@@ -298,6 +346,10 @@ func (im *IndexManager) getAllUniquePairs() ([]memtable.KVPair, error) {
 			return nil, fmt.Errorf("compaction failed to read pairs of table %d: %v", table.Meta.Serial, err)
 		}
 		for _, pair := range pairs {
+			// TODO urgent - check deleted keys
+			if pair.Value.Size == 0 {
+				continue
+			}
 			if _, ok := mp[pair.Key]; ok {
 				continue
 			}
@@ -316,13 +368,15 @@ func (im *IndexManager) getAllUniquePairs() ([]memtable.KVPair, error) {
 	return pairs, nil
 }
 
+// parseSSTable reads an SSTable or level from disk and adds it to the list of SSTables.
+// Returns an error if the SSTable cannot be parsed.
 func (im *IndexManager) parseSSTable(serial int, isLevel bool) error {
-	prefix := shared.SSTableNamePrefix
+	prefix := im.Config.SSTableNamePrefix
 	if isLevel {
-		prefix = shared.LevelFileNamePrefix
+		prefix = im.Config.LevelFileNamePrefix
 	}
 
-	table := NewSSTable(filepath.Join(im.path, fmt.Sprintf("%s%d", prefix, serial)), serial)
+	table := NewSSTable(filepath.Join(im.Config.Homepath, fmt.Sprintf("%s%d", prefix, serial)), serial, im.Config)
 	err := table.Open()
 	if err != nil {
 		return err
@@ -338,6 +392,8 @@ func (im *IndexManager) parseSSTable(serial int, isLevel bool) error {
 	return nil
 }
 
+// serializePairs writes key-value pairs to disk in the SSTable format.
+// Returns an error if the pairs cannot be written.
 func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, metadata *TableMetadata) error {
 	// SSTable serial number
 	err := binary.Write(w, binary.LittleEndian, metadata.Serial)
@@ -350,7 +406,7 @@ func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, met
 		return err
 	}
 	// write min and max keys
-	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey)
+	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey, im.Config.KeySize)
 	if err != nil {
 		return err
 	}
@@ -358,7 +414,7 @@ func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, met
 	if err != nil {
 		return err
 	}
-	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey)
+	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey, im.Config.KeySize)
 	if err != nil {
 		return err
 	}
@@ -369,7 +425,7 @@ func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, met
 
 	// write pairs
 	for _, pair := range pairs {
-		keyAsBytes, err := shared.KeyToBytes(pair.Key)
+		keyAsBytes, err := shared.KeyToBytes(pair.Key, im.Config.KeySize)
 		if err != nil {
 			return err
 		}
@@ -390,6 +446,7 @@ func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, met
 	return nil
 }
 
+// sortSSTablesBySerial sorts the list of SSTables and levels by their serial numbers in descending order.
 func (im *IndexManager) sortSSTablesBySerial() {
 	sort.Slice(im.sstables, func(i, j int) bool {
 		return im.sstables[i].Meta.Serial > im.sstables[j].Meta.Serial

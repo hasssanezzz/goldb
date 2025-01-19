@@ -2,19 +2,15 @@ package shared
 
 import "fmt"
 
-const KeyByteLength = 256
-const MetadataSize = KeyByteLength*2 + 4*2
-const KVPairSize = KeyByteLength + 4*2
-const MemtableSizeThreshold = 1000 // for now
-const SSTableExpectedSize = MetadataSize + MemtableSizeThreshold*KVPairSize
-const SSTableNamePrefix = "sst_"
-const LevelFileNamePrefix = "lvl_"
-const MaxSSTableCount = 10 // for now
+const UintSize = 4
 
-type ErrKeyTooLong struct{ Key string }
+type ErrKeyTooLong struct {
+	Key     string
+	KeySize uint32
+}
 
 func (e *ErrKeyTooLong) Error() string {
-	return fmt.Sprintf("key %q must be less than %d", e.Key, KeyByteLength)
+	return fmt.Sprintf("key %q size exceeded", e.Key, e.KeySize)
 }
 
 type ErrKeyNotFound struct{ Key string }

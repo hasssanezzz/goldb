@@ -16,12 +16,13 @@ type WALEntry struct {
 }
 
 type WAL struct {
-	source string
-	writer *os.File
+	keySize uint32
+	source  string
+	writer  *os.File
 }
 
-func New(source string) (*WAL, error) {
-	w := &WAL{source: source}
+func New(source string, keySize uint32) (*WAL, error) {
+	w := &WAL{source: source, keySize: keySize}
 	return w, w.Open()
 }
 
@@ -35,7 +36,7 @@ func (w *WAL) Open() error {
 }
 
 func (w *WAL) Log(key string, value []byte) error {
-	bytesToWrite, err := shared.KeyToBytes(key)
+	bytesToWrite, err := shared.KeyToBytes(key, w.keySize)
 	if err != nil {
 		return err
 	}
@@ -76,7 +77,7 @@ func (w *WAL) ParseLogs() ([]WALEntry, error) {
 	mp := map[string][]byte{}
 
 	for {
-		keyBytes, vlength := make([]byte, 256), make([]byte, 4)
+		keyBytes, vlength := make([]byte, w.keySize), make([]byte, 4)
 		_, err = buf.Read(keyBytes)
 		if err != nil {
 			if err == io.EOF {
