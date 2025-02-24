@@ -6,6 +6,8 @@ const KeyByteLength = 256
 const MetadataSize = KeyByteLength*2 + 4*2
 const KVPairSize = KeyByteLength + 4*2
 const MemtableSizeThreshold = 119_155 // about 30MB
+const HashFunctionsNumber = 7
+const BloomFilterSize = 1 << 21
 const SSTableExpectedSize = MetadataSize + MemtableSizeThreshold*KVPairSize
 
 type ErrKeyTooLong struct{ Key string }
