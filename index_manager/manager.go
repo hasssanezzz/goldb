@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 
+	bloomfilter "github.com/hasssanezzz/goldb-engine/bloom_filter"
 	"github.com/hasssanezzz/goldb-engine/memtable"
 	"github.com/hasssanezzz/goldb-engine/shared"
 )
@@ -17,16 +18,18 @@ import (
 const SSTableNamePrefix = "sst_"
 
 type IndexManager struct {
-	Memtable   *memtable.Table
-	path       string
-	currSerial int
-	sstables   []*SSTable
+	Memtable    *memtable.Table
+	bloomfilter *bloomfilter.BloomFilter
+	path        string
+	currSerial  int
+	sstables    []*SSTable
 }
 
 func New(homepath string) (*IndexManager, error) {
 	im := &IndexManager{
-		Memtable: memtable.New(),
-		path:     homepath,
+		Memtable:    memtable.New(),
+		bloomfilter: bloomfilter.New(),
+		path:        homepath,
 	}
 
 	err := im.ReadTables()
@@ -68,7 +71,17 @@ func (im *IndexManager) ReadTables() error {
 	return nil
 }
 
+func (im *IndexManager) Set(key string, indexNode memtable.IndexNode) {
+	im.Memtable.Set(key, indexNode)
+	im.bloomfilter.Add(key)
+}
+
 func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
+	// check the bloom filter first
+	if !im.bloomfilter.PossiblyContains(key) {
+		return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+	}
+	// check the memtable (for false positives)
 	if im.Memtable.Contains(key) {
 		indexNode := im.Memtable.Get(key)
 		if indexNode.Size == 0 {
@@ -118,6 +131,8 @@ func (im *IndexManager) Flush() error {
 
 	// reset the memtable after successfully serializing it
 	im.Memtable = memtable.New()
+	// reset the bloom filter as well
+	im.bloomfilter.Reset()
 
 	newSSTable := NewSSTable(path, im.currSerial)
 	newSSTable.Meta = meta
