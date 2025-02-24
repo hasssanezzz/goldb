@@ -152,7 +152,7 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	if err != nil {
 		return fmt.Errorf("db engine can not write (%q, %x): %v", key, value, err)
 	}
-	e.indexManager.Memtable.Set(key, memtable.IndexNode{
+	e.indexManager.Set(key, memtable.IndexNode{
 		Offset: offset,
 		Size:   uint32(len(value)),
 	})
