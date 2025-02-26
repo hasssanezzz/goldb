@@ -1,21 +1,22 @@
 package api
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
 
-	"github.com/hasssanezzz/goldb-engine/engine"
-	"github.com/hasssanezzz/goldb-engine/shared"
+	"github.com/hasssanezzz/goldb"
+	"github.com/hasssanezzz/goldb/internal/shared"
 )
 
 type API struct {
-	DB *engine.Engine
+	DB *goldb.Engine
 }
 
 func New(source string) (*API, error) {
-	db, err := engine.New(source)
+	db, err := goldb.New(source)
 	if err != nil {
 		return nil, err
 	}
@@ -43,8 +44,8 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := r.Header.Get("Key")
-	if len([]byte(key)) > shared.KeyByteLength {
-		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+	if len([]byte(key)) > int(api.DB.Config.KeySize) {
+		http.Error(w, fmt.Sprintf("Key size must be less than or equal %d bytes", api.DB.Config.KeySize), http.StatusBadRequest)
 		return
 	}
 
@@ -64,8 +65,8 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
-	if len([]byte(key)) > shared.KeyByteLength {
-		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+	if len([]byte(key)) > int(api.DB.Config.KeySize) {
+		http.Error(w, fmt.Sprintf("Key size must be less than or equal %d bytes", api.DB.Config.KeySize), http.StatusBadRequest)
 		return
 	}
 
@@ -89,8 +90,8 @@ func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Header.Get("Key")
-	if len([]byte(key)) > shared.KeyByteLength {
-		http.Error(w, "Key size must be less than or equal 256 bytes", http.StatusBadRequest)
+	if len([]byte(key)) > int(api.DB.Config.KeySize) {
+		http.Error(w, fmt.Sprintf("Key size must be less than or equal %d bytes", api.DB.Config.KeySize), http.StatusBadRequest)
 		return
 	}
 

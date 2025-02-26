@@ -1,4 +1,4 @@
-package engine
+package goldb
 
 import (
 	"fmt"
@@ -6,23 +6,31 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hasssanezzz/goldb-engine/index_manager"
-	"github.com/hasssanezzz/goldb-engine/memtable"
-	"github.com/hasssanezzz/goldb-engine/shared"
-	"github.com/hasssanezzz/goldb-engine/storage_manager"
-	"github.com/hasssanezzz/goldb-engine/wal"
+	"github.com/hasssanezzz/goldb/internal/index_manager"
+	"github.com/hasssanezzz/goldb/internal/memtable"
+	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/internal/storage_manager"
+	"github.com/hasssanezzz/goldb/internal/wal"
 )
 
 type Engine struct {
+	Config         shared.EngineConfig
 	indexManager   *index_manager.IndexManager
 	storageManager *storage_manager.StorageManager
 	wal            *wal.WAL
 }
 
-func New(homepath string) (*Engine, error) {
+func New(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
 	e := &Engine{}
 
-	indexMangaer, err := index_manager.New(homepath)
+	config := shared.DefaultConfig
+	if len(configs) > 0 {
+		config = configs[0]
+	}
+	config.Homepath = homepath
+	e.Config = config
+
+	indexManager, err := index_manager.New(&config)
 	if err != nil {
 		return nil, err
 	}
@@ -32,12 +40,12 @@ func New(homepath string) (*Engine, error) {
 		return nil, err
 	}
 
-	wal, err := wal.New(filepath.Join(homepath, "wal.log.bin"))
+	wal, err := wal.New(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
 	if err != nil {
 		return nil, err
 	}
 
-	e.indexManager = indexMangaer
+	e.indexManager = indexManager
 	e.storageManager = storageManager
 	e.wal = wal
 
@@ -71,7 +79,7 @@ func (e *Engine) setEntriesFromWAL() error {
 }
 
 func (e *Engine) Scan(pattern string) ([]string, error) {
-	keys, err := e.indexManager.Keys(pattern)
+	keys, err := e.indexManager.Keys()
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +101,8 @@ func (e *Engine) Scan(pattern string) ([]string, error) {
 
 func (e *Engine) Get(key string) ([]byte, error) {
 	// make sure key size is valid
-	if len([]byte(key)) > shared.KeyByteLength {
-		return nil, &shared.ErrKeyTooLong{Key: key}
+	if len([]byte(key)) > int(e.Config.KeySize) {
+		return nil, &shared.ErrKeyTooLong{Key: key, KeySize: e.Config.KeySize}
 	}
 
 	indexNode, err := e.indexManager.Get(key)
@@ -119,8 +127,8 @@ func (e *Engine) Get(key string) ([]byte, error) {
 
 func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	// make sure key size is valid
-	if len([]byte(key)) > shared.KeyByteLength {
-		return &shared.ErrKeyTooLong{Key: key}
+	if len([]byte(key)) > int(e.Config.KeySize) {
+		return &shared.ErrKeyTooLong{Key: key, KeySize: e.Config.KeySize}
 	}
 
 	// first of all after validating the key size, write the pair to the WAL if not ingored.
@@ -134,7 +142,7 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	}
 
 	// periodic flush, after the memtable hits its threshold
-	if e.indexManager.Memtable.Size >= shared.MemtableSizeThreshold {
+	if e.indexManager.Memtable.Size >= e.Config.MemtableSizeThreshold {
 		// TODO - add locks to avoid concurrency issues.
 		// NOTE - I temporary removed the `go` keyword
 		func() {
@@ -146,6 +154,11 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 			// if the flush was successful, clear the WAL
 			e.wal.Clear()
 		}()
+
+		err := e.indexManager.CompactionCheck()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	offset, err := e.storageManager.WriteValue(value)
@@ -161,8 +174,8 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 
 func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
 	// make sure key size is valid
-	if len([]byte(key)) > shared.KeyByteLength {
-		return &shared.ErrKeyTooLong{Key: key}
+	if len([]byte(key)) > int(e.Config.KeySize) {
+		return &shared.ErrKeyTooLong{Key: key, KeySize: e.Config.KeySize}
 	}
 
 	// first of all after validating the key size
