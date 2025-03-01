@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/hasssanezzz/goldb/internal/bloom"
 	"github.com/hasssanezzz/goldb/internal/memtable"
 	"github.com/hasssanezzz/goldb/internal/shared"
 )
@@ -17,6 +18,7 @@ type TableMetadata struct {
 	Size    uint32
 	MinKey  string
 	MaxKey  string
+	filter  *bloom.Filter
 }
 
 type SSTable struct {
@@ -85,6 +87,21 @@ func (s *SSTable) ParseMetadata() error {
 		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
 	}
 	s.metadata.MaxKey = shared.TrimPaddedKey(string(keyBuffer))
+
+	// read length of bloom filter
+	_, err = s.file.Read(uintBuffer)
+	if err != nil {
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
+	}
+	filterLength := binary.LittleEndian.Uint32(uintBuffer)
+
+	// read bloom filter itself
+	filterBytes := make([]byte, filterLength)
+	_, err = s.file.Read(filterBytes)
+	if err != nil {
+		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
+	}
+	s.metadata.filter = bloom.New(uint(s.metadata.Size), s.config.FalsePositiveRate, filterBytes)
 
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hasssanezzz/goldb/internal/bloom"
 	"github.com/hasssanezzz/goldb/internal/memtable"
 	"github.com/hasssanezzz/goldb/internal/shared"
 )
@@ -151,6 +152,12 @@ func (im *IndexManager) Flush() error {
 		Serial:  uint32(im.currSerial),
 		MinKey:  pairs[0].Key,
 		MaxKey:  pairs[len(pairs)-1].Key,
+		filter:  bloom.New(uint(len(pairs)), im.config.FalsePositiveRate, nil),
+	}
+
+	// add pairs to the bloom filter
+	for _, pair := range pairs {
+		metadata.filter.Add(pair.Key)
 	}
 
 	err = im.serializePairs(file, pairs, &metadata)
@@ -383,6 +390,17 @@ func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, met
 		return err
 	}
 	_, err = w.Write(keyAsBytes)
+	if err != nil {
+		return err
+	}
+
+	// write bloom filter
+	filterLength := uint32(len(metadata.filter.Bitset))
+	err = binary.Write(w, binary.LittleEndian, filterLength)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(metadata.filter.Bitset)
 	if err != nil {
 		return err
 	}

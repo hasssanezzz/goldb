@@ -6,6 +6,7 @@ var DefaultConfig = EngineConfig{
 	SSTableNamePrefix:     "sst_",
 	LevelFileNamePrefix:   "lvl_",
 	CompactionThreshold:   10,
+	FalsePositiveRate:     0.01,
 }
 
 // EngineConfig defines the configuration parameters for the Goldb database engine.
@@ -17,6 +18,7 @@ type EngineConfig struct {
 	LevelFileNamePrefix   string // Prefix for level file names.
 	CompactionThreshold   uint32 // Number of SSTables that if exceeded will trigger compaction.
 	Homepath              string
+	FalsePositiveRate     float64 // False positive rate for the bloom filter.
 }
 
 func NewEngineConfig() *EngineConfig {
