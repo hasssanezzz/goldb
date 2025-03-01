@@ -86,6 +86,11 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 
 	// 2. search in the SSTables
 	for _, table := range im.sstables {
+		// check the bloom filter first
+		if !table.metadata.filter.PossiblyExists(key) {
+			continue
+		}
+
 		if table.metadata.MinKey > key || table.metadata.MaxKey < key {
 			continue
 		}
