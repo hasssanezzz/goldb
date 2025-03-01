@@ -294,6 +294,12 @@ func (im *IndexManager) createLevel() error {
 		Serial:  uint32(im.lvlSerial),
 		MinKey:  allPairs[0].Key,
 		MaxKey:  allPairs[len(allPairs)-1].Key,
+		filter:  bloom.New(uint(len(allPairs)), im.config.FalsePositiveRate, nil),
+	}
+
+	// add pairs to the bloom filter
+	for _, pair := range allPairs {
+		metadata.filter.Add(pair.Key)
 	}
 
 	err = im.serializePairs(file, allPairs, &metadata)
