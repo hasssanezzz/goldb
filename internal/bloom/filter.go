@@ -37,7 +37,7 @@ func (f *Filter) hash(key string, seed uint) uint32 {
 
 func (f *Filter) Add(key string) {
 	for i := uint(0); i < f.k; i++ {
-		hash := f.hash(key, i)
+		hash := f.hash(key, i) % uint32(f.m)
 		byteIndex := hash / 8
 		bitIndex := hash % 8
 		f.Bitset[byteIndex] |= 1 << bitIndex
@@ -46,7 +46,7 @@ func (f *Filter) Add(key string) {
 
 func (f *Filter) PossiblyExists(key string) bool {
 	for i := uint(0); i < f.k; i++ {
-		hash := f.hash(key, i)
+		hash := f.hash(key, i) % uint32(f.m)
 		byteIndex := hash / 8
 		bitIndex := hash % 8
 		if f.Bitset[byteIndex]&(1<<bitIndex) == 0 {
