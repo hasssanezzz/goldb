@@ -1,4 +1,4 @@
-# README: Goldb Key-Value Database Engine
+# Goldb Key-Value Database Engine
 
 ## Project Overview
 
