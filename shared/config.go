@@ -3,9 +3,9 @@ package shared
 var DefaultConfig = EngineConfig{
 	KeySize:               256,
 	MemtableSizeThreshold: 1000,
+	CompactionThreshold:   10,
 	SSTableNamePrefix:     "sst_",
 	LevelFileNamePrefix:   "lvl_",
-	CompactionThreshold:   10,
 }
 
 // EngineConfig defines the configuration parameters for the Goldb database engine.
@@ -13,10 +13,10 @@ var DefaultConfig = EngineConfig{
 type EngineConfig struct {
 	KeySize               uint32 // Maximum size of a key in bytes.
 	MemtableSizeThreshold uint32 // Maximum number of key-value pairs the memtable can hold before flushing to disk.
+	CompactionThreshold   uint32 // Number of SSTables that if exceeded will trigger compaction.
 	SSTableNamePrefix     string // Prefix for SSTable file names.
 	LevelFileNamePrefix   string // Prefix for level file names.
-	CompactionThreshold   uint32 // Number of SSTables that if exceeded will trigger compaction.
-	Homepath              string
+	Homepath              string // Source directory
 }
 
 func NewEngineConfig() *EngineConfig {
@@ -58,6 +58,7 @@ func (ec *EngineConfig) WithLevelFileNamePrefix(value string) *EngineConfig {
 // The metadata includes the serial number, pair count, min key, and max key.
 // Returns the total size in bytes.
 func (ec *EngineConfig) GetMetadataSize() uint32 {
+	// TODO: this is very wrong, if the metadata struct changes this will not be reflected
 	return ec.KeySize*2 + UintSize*2
 }
 

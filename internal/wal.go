@@ -1,4 +1,4 @@
-package wal
+package internal
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/shared"
 )
 
 type WALEntry struct {
@@ -21,7 +21,7 @@ type WAL struct {
 	writer  *os.File
 }
 
-func New(source string, keySize uint32) (*WAL, error) {
+func NewWAL(source string, keySize uint32) (*WAL, error) {
 	w := &WAL{source: source, keySize: keySize}
 	return w, w.Open()
 }
@@ -121,6 +121,6 @@ func (w *WAL) Clear() error {
 	return os.Truncate(w.source, 0)
 }
 
-func (w *WAL) Close() {
-	w.writer.Close()
+func (w *WAL) Close() error {
+	return w.writer.Close()
 }

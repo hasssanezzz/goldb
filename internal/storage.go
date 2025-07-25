@@ -1,13 +1,16 @@
-package storage_manager
+package internal
 
 import (
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/hasssanezzz/goldb/internal/memtable"
-	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/shared"
 )
+
+// TODO: make this is a pair value manager not a storage manager, and create
+// a seperate actuall storage manager which concerns itself with dealing
+// with disk operations, the value manager will depend on the storage manager.
 
 type StorageManager struct {
 	writer   shared.WriteSeekCloser
@@ -15,7 +18,7 @@ type StorageManager struct {
 	filename string
 }
 
-func New(filename string) (*StorageManager, error) {
+func NewStorageManager(filename string) (*StorageManager, error) {
 	sm := &StorageManager{filename: filename}
 	return sm, sm.Open()
 }
@@ -47,7 +50,8 @@ func (s *StorageManager) WriteValue(value []byte) (uint32, error) {
 	return uint32(offset), err
 }
 
-func (s *StorageManager) ReadValue(indexNode memtable.IndexNode) ([]byte, error) {
+// ReadValue read a value in frmo KV pair based on size and offset
+func (s *StorageManager) ReadValue(indexNode IndexNode) ([]byte, error) {
 	if indexNode.Size == 0 {
 		return nil, &shared.ErrKeyNotFound{}
 	}
@@ -62,6 +66,11 @@ func (s *StorageManager) ReadValue(indexNode memtable.IndexNode) ([]byte, error)
 		return nil, err
 	}
 	return buf, nil
+}
+
+// Compact deletes all unused values
+func (s *StorageManager) Compact() error {
+	panic("unimplemented")
 }
 
 func (s *StorageManager) Close() error {

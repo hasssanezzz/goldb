@@ -63,7 +63,11 @@ Options:
 	if err != nil {
 		log.Fatalf("can not open db: %v", err)
 	}
-	defer api.DB.Close()
+	defer func() {
+		if err := api.DB.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	api.SetupRoutes(mux)

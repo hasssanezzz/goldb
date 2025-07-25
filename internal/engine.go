@@ -1,4 +1,4 @@
-package goldb
+package internal
 
 import (
 	"fmt"
@@ -6,21 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hasssanezzz/goldb/internal/index_manager"
-	"github.com/hasssanezzz/goldb/internal/memtable"
-	"github.com/hasssanezzz/goldb/internal/shared"
-	"github.com/hasssanezzz/goldb/internal/storage_manager"
-	"github.com/hasssanezzz/goldb/internal/wal"
+	"github.com/hasssanezzz/goldb/shared"
 )
 
 type Engine struct {
 	Config         shared.EngineConfig
-	indexManager   *index_manager.IndexManager
-	storageManager *storage_manager.StorageManager
-	wal            *wal.WAL
+	indexManager   *IndexManager
+	storageManager *StorageManager
+	wal            *WAL
 }
 
-func New(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
+func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
 	e := &Engine{}
 
 	config := shared.DefaultConfig
@@ -30,17 +26,17 @@ func New(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
 	config.Homepath = homepath
 	e.Config = config
 
-	indexManager, err := index_manager.New(&config)
+	indexManager, err := NewIndexManager(&config)
 	if err != nil {
 		return nil, err
 	}
 
-	storageManager, err := storage_manager.New(filepath.Join(homepath, "data.bin"))
+	storageManager, err := NewStorageManager(filepath.Join(homepath, "data.bin"))
 	if err != nil {
 		return nil, err
 	}
 
-	wal, err := wal.New(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
+	wal, err := NewWAL(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
 	if err != nil {
 		return nil, err
 	}
@@ -163,11 +159,14 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 
 	offset, err := e.storageManager.WriteValue(value)
 	if err != nil {
-		return fmt.Errorf("db engine can not write (%q, %x): %v", key, value, err)
+		return fmt.Errorf("engine failed to write (%q, %x): %v", key, value, err)
 	}
-	e.indexManager.Memtable.Set(key, memtable.IndexNode{
-		Offset: offset,
-		Size:   uint32(len(value)),
+	e.indexManager.Memtable.Set(KVPair{
+		Key: key,
+		Value: IndexNode{
+			Offset: offset,
+			Size:   uint32(len(value)),
+		},
 	})
 	return nil
 }
@@ -193,7 +192,12 @@ func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
 	return nil
 }
 
-func (e *Engine) Close() {
-	e.indexManager.Close()
-	e.storageManager.Close()
+func (e *Engine) Close() error {
+	if err := e.indexManager.Close(); err != nil {
+		return err
+	}
+	if err := e.storageManager.Close(); err != nil {
+		return err
+	}
+	return nil
 }

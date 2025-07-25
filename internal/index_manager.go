@@ -1,12 +1,7 @@
-// Package index_manager manages the indexing and organization of SSTables and levels.
-// It provides functionality for key lookups, flushing the memtable to disk as SSTables,
-// and performing compaction to merge SSTables into levels.
-//
-// The package is inspired by LSM-tree principles, ensuring efficient write and read
-// operations for key-value storage systems.
-package index_manager
+package internal
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,14 +11,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hasssanezzz/goldb/internal/memtable"
-	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/shared"
 )
 
 // IndexManager handles the indexing of keys across the memtable, SSTables, and levels.
 // It ensures that keys are efficiently located and manages the compaction process.
 type IndexManager struct {
-	Memtable   *memtable.Table // In-memory AVL tree for temporary storage.
+	Memtable   *Table // In-memory AVL tree for temporary storage.
 	config     *shared.EngineConfig
 	currSerial int        // Current serial number for SSTables.
 	lvlSerial  int        // Current serial number for levels.
@@ -31,13 +25,13 @@ type IndexManager struct {
 	levels     []*SSTable // List of levels (merged SSTables).
 }
 
-// New initializes a new IndexManager with the given homepath.
+// NewIndexManager initializes a new IndexManager with the given homepath.
 // It reads existing SSTables and levels from disk and prepares the memtable for writes.
 // Returns an error if the directory cannot be accessed or if SSTables cannot be parsed.
-func New(config *shared.EngineConfig) (*IndexManager, error) {
+func NewIndexManager(config *shared.EngineConfig) (*IndexManager, error) {
 	im := &IndexManager{
+		Memtable:   NewAVLMemtable(),
 		config:     config,
-		Memtable:   memtable.New(),
 		currSerial: 1, // starting from one to reserve number zero
 		lvlSerial:  1, // level 0 for SSTables only
 	}
@@ -72,13 +66,13 @@ func (im *IndexManager) ParseHomeDir() error {
 // Get retrieves the IndexNode for the given key.
 // It searches the memtable, SSTables, and levels in order of recency.
 // Returns ErrKeyNotFound if the key does not exist.
-func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
+func (im *IndexManager) Get(key string) (IndexNode, error) {
 
 	// 1. search in the memtable
 	if im.Memtable.Contains(key) {
 		indexNode := im.Memtable.Get(key)
 		if indexNode.Size == 0 {
-			return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+			return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 		}
 		return indexNode, nil
 	}
@@ -92,10 +86,10 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*shared.ErrKeyRemoved); ok {
-				return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+				return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 			}
 			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
-				return memtable.IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
+				return IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
 			}
 			continue
 		}
@@ -112,10 +106,10 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*shared.ErrKeyRemoved); ok {
-				return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+				return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 			}
 			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
-				return memtable.IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
+				return IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
 			}
 			continue
 		}
@@ -123,13 +117,13 @@ func (im *IndexManager) Get(key string) (memtable.IndexNode, error) {
 		return result, nil
 	}
 
-	return memtable.IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+	return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
 }
 
 // Delete marks the given key as deleted in the memtable.
 // The key will be removed during the next flush or compaction.
 func (im *IndexManager) Delete(key string) {
-	im.Memtable.Set(key, memtable.IndexNode{})
+	im.Memtable.Set(KVPair{Key: key})
 }
 
 // Flush writes the contents of the memtable to disk as a new SSTable.
@@ -143,6 +137,7 @@ func (im *IndexManager) Flush() error {
 	}
 	defer file.Close()
 
+	// Initialize the new table's metadata
 	pairs := im.Memtable.Items()
 	metadata := TableMetadata{
 		Path:    path,
@@ -153,23 +148,30 @@ func (im *IndexManager) Flush() error {
 		MaxKey:  pairs[len(pairs)-1].Key,
 	}
 
-	err = im.serializePairs(file, pairs, &metadata)
+	// Serialize the pairs
+	data, err := serializePairs(im.config, pairs, &metadata)
 	if err != nil {
-		return fmt.Errorf("index manager can not flush sstable %d: %v", im.currSerial, err)
+		return fmt.Errorf("index manager can not serialize pairs %d: %v", im.currSerial, err)
 	}
 
-	// reset the memtable after successfully serializing it
-	im.Memtable = memtable.New()
+	// Write the serialized pairs
+	if _, err := file.Write(data); err != nil {
+		return fmt.Errorf("index manager failed to write serialized pairs %d: %v", im.currSerial, err)
+	}
 
+	// Reset the memtable after successfully serializing it
+	im.Memtable = NewAVLMemtable()
+
+	// Create a logical SSTable after successfully creating the physical one
 	newSSTable, err := NewSSTable(metadata, im.config)
 	if err != nil {
 		return err
 	}
-
 	im.sstables = append(im.sstables, newSSTable)
 	im.sortTablesBySerial()
 	im.currSerial++
 
+	// REMOVE
 	log.Printf("index manager: flushed the memtable successfully, created new table %d", im.currSerial-1)
 
 	return nil
@@ -234,7 +236,6 @@ func (im *IndexManager) CompactionCheck() error {
 }
 
 func (im *IndexManager) readTable(filename string) error {
-
 	// 1. create a new sstable
 	fullPath := filepath.Join(im.config.Homepath, filename)
 	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config)
@@ -317,10 +318,10 @@ func (im *IndexManager) createLevel() error {
 // getAllUniquePairs retrieves all unique key-value pairs from SSTables.
 // It removes duplicates and deleted keys.
 // Returns an error if any SSTable cannot be read.
-func (im *IndexManager) getAllUniquePairs() ([]memtable.KVPair, error) {
-	mp := map[string]*memtable.KVPair{}
+func (im *IndexManager) getAllUniquePairs() ([]KVPair, error) {
+	mp := map[string]*KVPair{}
 	for _, table := range im.sstables {
-		pairs, err := table.KVPairs()
+		pairs, err := table.Items()
 		if err != nil {
 			return nil, fmt.Errorf("compaction failed to read pairs of table %d: %v", table.metadata.Serial, err)
 		}
@@ -336,78 +337,64 @@ func (im *IndexManager) getAllUniquePairs() ([]memtable.KVPair, error) {
 		}
 	}
 
-	pairs := make([]memtable.KVPair, len(mp))
+	pairs := make([]KVPair, len(mp))
 	i := 0
 	for _, pair := range mp {
 		pairs[i] = *pair
 	}
 
-	sort.Sort(memtable.KVPairSlice(pairs))
+	sort.Sort(KVPairSlice(pairs))
 
 	return pairs, nil
 }
 
 // serializePairs writes key-value pairs to disk in the SSTable format.
 // Returns an error if the pairs cannot be written.
-func (im *IndexManager) serializePairs(w io.Writer, pairs []memtable.KVPair, metadata *TableMetadata) error {
-	// isLevel
-	byteToWrite := byte(0x00)
+func (im *IndexManager) serializePairs(w io.Writer, pairs []KVPair, metadata *TableMetadata) error {
+	buffer := bytes.NewBuffer(nil)
+
+	isLevelAsByte := byte(0x00)
 	if metadata.IsLevel {
-		byteToWrite = byte(0xFF)
+		isLevelAsByte = byte(0xFF)
 	}
-	err := binary.Write(w, binary.LittleEndian, byteToWrite)
-	if err != nil {
-		return err
-	}
-	// serial number
-	err = binary.Write(w, binary.LittleEndian, metadata.Serial)
-	if err != nil {
-		return err
-	}
-	// pair count
-	err = binary.Write(w, binary.LittleEndian, metadata.Size)
-	if err != nil {
-		return err
-	}
-	// write min and max keys
+
+	binary.Write(buffer, binary.LittleEndian, isLevelAsByte)
+	binary.Write(buffer, binary.LittleEndian, metadata.Serial)
+	binary.Write(buffer, binary.LittleEndian, metadata.Size)
+
+	// Writing min key
 	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey, im.config.KeySize)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(keyAsBytes)
-	if err != nil {
-		return err
-	}
+	buffer.Write(keyAsBytes)
+
+	// Writing max key
 	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey, im.config.KeySize)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(keyAsBytes)
-	if err != nil {
-		return err
-	}
+	buffer.Write(keyAsBytes)
 
-	// write pairs
+	// Write pairs
 	for _, pair := range pairs {
+		// Skip deleted keys
+		if pair.Value.Size == 0 {
+			continue
+		}
+
 		keyAsBytes, err := shared.KeyToBytes(pair.Key, im.config.KeySize)
 		if err != nil {
 			return err
 		}
-		_, err = w.Write(keyAsBytes)
-		if err != nil {
-			return err
-		}
-		err = binary.Write(w, binary.LittleEndian, pair.Value.Offset)
-		if err != nil {
-			return err
-		}
-		err = binary.Write(w, binary.LittleEndian, pair.Value.Size)
-		if err != nil {
-			return err
-		}
+
+		buffer.Write(keyAsBytes) // Key is fixed length
+		binary.Write(buffer, binary.LittleEndian, pair.Value.Offset)
+		binary.Write(buffer, binary.LittleEndian, pair.Value.Size)
 	}
 
-	return nil
+	_, err = w.Write(buffer.Bytes())
+	return err
 }
 
 // sortTablesBySerial sorts the list of SSTables and levels by their serial numbers in descending order.

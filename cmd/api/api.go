@@ -2,21 +2,21 @@ package api
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"strings"
 
-	"github.com/hasssanezzz/goldb"
-	"github.com/hasssanezzz/goldb/internal/shared"
+	"github.com/hasssanezzz/goldb/internal"
+	"github.com/hasssanezzz/goldb/shared"
 )
 
 type API struct {
-	DB *goldb.Engine
+	DB *internal.Engine
 }
 
 func New(source string) (*API, error) {
-	db, err := goldb.New(source)
+	db, err := internal.NewEngine(source)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func New(source string) (*API, error) {
 }
 
 func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
-	// check is this is a prefix scan query
+	// check if this is a prefix scan query
 	prefix := r.Header.Get("prefix")
 	if len(prefix) > 0 {
 		results, err := api.DB.Scan(prefix)
@@ -70,7 +70,7 @@ func (api *API) postHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Unable to read body", http.StatusBadRequest)
 		return

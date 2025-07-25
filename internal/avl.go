@@ -1,4 +1,4 @@
-package memtable
+package internal
 
 type treeNode struct {
 	key    string
@@ -8,29 +8,39 @@ type treeNode struct {
 	height int
 }
 
-type Table struct {
-	Size uint32
-	root *treeNode
-}
-
-type KVPair struct {
-	Key   string
-	Value IndexNode
-}
-
-type KVPairSlice []KVPair
-
-func (a KVPairSlice) Len() int           { return len(a) }
-func (a KVPairSlice) Less(i, j int) bool { return a[i].Key < a[j].Key }
-func (a KVPairSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
 type IndexNode struct {
 	Offset uint32
 	Size   uint32
 }
 
-func New() *Table {
+type Table struct {
+	Size uint32
+	root *treeNode
+}
+
+func NewAVLMemtable() *Table {
 	return &Table{}
+}
+
+func (t *Table) Set(pair KVPair) {
+	if !t.Contains(pair.Key) {
+		t.Size++
+	}
+	t.root = t.insert(t.root, pair.Key, pair.Value)
+}
+
+func (t *Table) Get(key string) IndexNode {
+	return t.get(t.root, key)
+}
+
+func (t *Table) Contains(key string) bool {
+	return t.get(t.root, key).Size != 0
+}
+
+func (t *Table) Items() []KVPair {
+	r := []KVPair{}
+	t.inOrder(t.root, &r)
+	return r
 }
 
 func (t *Table) height(node *treeNode) int {
@@ -77,13 +87,6 @@ func (t *Table) leftRotate(x *treeNode) *treeNode {
 
 	// return new root
 	return y
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (t *Table) balance(node *treeNode, key string) *treeNode {
@@ -154,28 +157,4 @@ func (t *Table) inOrder(node *treeNode, result *[]KVPair) {
 		*result = append(*result, KVPair{node.key, node.value})
 		t.inOrder(node.right, result)
 	}
-}
-
-// public functions
-
-// also works as "put"
-func (t *Table) Set(key string, value IndexNode) {
-	if !t.Contains(key) {
-		t.Size++
-	}
-	t.root = t.insert(t.root, key, value)
-}
-
-func (t *Table) Get(key string) IndexNode {
-	return t.get(t.root, key)
-}
-
-func (t *Table) Contains(key string) bool {
-	return t.get(t.root, key).Size != 0
-}
-
-func (t *Table) Items() []KVPair {
-	r := []KVPair{}
-	t.inOrder(t.root, &r)
-	return r
 }
