@@ -116,13 +116,13 @@ func (s *SSTable) Items() ([]KVPair, error) {
 	return results, nil
 }
 
-func (s *SSTable) BSearch(key string) (IndexNode, error) {
+func (s *SSTable) BSearch(key string) (Position, error) {
 	left, right := 0, int(s.metadata.Size-1)
 	for left <= right {
 		mid := left + (right-left)/2
 		pair, err := s.nthKey(mid)
 		if err != nil {
-			return IndexNode{}, fmt.Errorf("sstable %q can not perform bsearch gettting the %dth key: %v", s.metadata.Path, mid, err)
+			return Position{}, fmt.Errorf("sstable %q can not perform bsearch gettting the %dth key: %v", s.metadata.Path, mid, err)
 		}
 
 		if pair.Key < key {
@@ -131,14 +131,14 @@ func (s *SSTable) BSearch(key string) (IndexNode, error) {
 			right = mid - 1
 		} else {
 			if pair.Value.Size == 0 {
-				return IndexNode{}, &shared.ErrKeyRemoved{Key: key}
+				return Position{}, &shared.ErrKeyRemoved{Key: key}
 			} else {
 				return pair.Value, nil
 			}
 		}
 	}
 
-	return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+	return Position{}, &shared.ErrKeyNotFound{Key: key}
 }
 
 func (s *SSTable) Close() error {
@@ -175,7 +175,7 @@ func (s *SSTable) nthKey(n int) (KVPair, error) {
 
 	return KVPair{
 		Key: shared.TrimPaddedKey(string(keyBuffer)),
-		Value: IndexNode{
+		Value: Position{
 			Offset: offset,
 			Size:   size,
 		},

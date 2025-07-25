@@ -2,34 +2,34 @@ package internal
 
 type treeNode struct {
 	key    string
-	value  IndexNode
+	value  Position
 	left   *treeNode
 	right  *treeNode
 	height int
 }
 
-type IndexNode struct {
+type Position struct {
 	Offset uint32
 	Size   uint32
 }
 
 type Table struct {
-	Size uint32
+	size uint32
 	root *treeNode
 }
 
-func NewAVLMemtable() *Table {
+func NewAVLMemtable() Memtable {
 	return &Table{}
 }
 
 func (t *Table) Set(pair KVPair) {
 	if !t.Contains(pair.Key) {
-		t.Size++
+		t.size++
 	}
 	t.root = t.insert(t.root, pair.Key, pair.Value)
 }
 
-func (t *Table) Get(key string) IndexNode {
+func (t *Table) Get(key string) Position {
 	return t.get(t.root, key)
 }
 
@@ -41,6 +41,10 @@ func (t *Table) Items() []KVPair {
 	r := []KVPair{}
 	t.inOrder(t.root, &r)
 	return r
+}
+
+func (t *Table) Size() uint32 {
+	return t.size
 }
 
 func (t *Table) height(node *treeNode) int {
@@ -117,7 +121,7 @@ func (t *Table) balance(node *treeNode, key string) *treeNode {
 	return node
 }
 
-func (t *Table) insert(node *treeNode, key string, value IndexNode) *treeNode {
+func (t *Table) insert(node *treeNode, key string, value Position) *treeNode {
 	// perform normal bst insertion
 	if node == nil {
 		return &treeNode{key: key, value: value, height: 1}
@@ -137,9 +141,9 @@ func (t *Table) insert(node *treeNode, key string, value IndexNode) *treeNode {
 	return t.balance(node, key)
 }
 
-func (t *Table) get(node *treeNode, key string) IndexNode {
+func (t *Table) get(node *treeNode, key string) Position {
 	if node == nil {
-		return IndexNode{}
+		return Position{}
 	}
 
 	if node.key == key {

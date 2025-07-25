@@ -2,7 +2,7 @@ package internal
 
 type KVPair struct {
 	Key   string
-	Value IndexNode
+	Value Position
 }
 
 type KVPairSlice []KVPair

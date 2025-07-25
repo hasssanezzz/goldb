@@ -10,23 +10,18 @@ import (
 	"github.com/hasssanezzz/goldb/shared"
 )
 
-type WALEntry struct {
-	Key   string
-	Value []byte
-}
-
-type WAL struct {
+type DiskWAL struct {
 	keySize uint32
 	source  string
 	writer  *os.File
 }
 
-func NewWAL(source string, keySize uint32) (*WAL, error) {
-	w := &WAL{source: source, keySize: keySize}
+func NewDiskWAL(source string, keySize uint32) (WAL, error) {
+	w := &DiskWAL{source: source, keySize: keySize}
 	return w, w.Open()
 }
 
-func (w *WAL) Open() error {
+func (w *DiskWAL) Open() error {
 	wfile, err := os.OpenFile(w.source, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("WAL %q can not open file: %v", w.source, err)
@@ -35,21 +30,21 @@ func (w *WAL) Open() error {
 	return nil
 }
 
-func (w *WAL) Log(key string, value []byte) error {
-	bytesToWrite, err := shared.KeyToBytes(key, w.keySize)
+func (w *DiskWAL) Append(entry WALEntry) error {
+	bytesToWrite, err := shared.KeyToBytes(entry.Key, w.keySize)
 	if err != nil {
 		return err
 	}
 
 	valueLengthBuff := make([]byte, 4)
-	valueLength := uint32(len(value))
+	valueLength := uint32(len(entry.Value))
 	binary.LittleEndian.PutUint32(valueLengthBuff, valueLength)
 	bytesToWrite = append(bytesToWrite, valueLengthBuff...)
 
 	// if len(value) == 0 then this is a delete operation
 	// if not, this is a set/put operation
-	if len(value) > 0 {
-		bytesToWrite = append(bytesToWrite, value...)
+	if len(entry.Value) > 0 {
+		bytesToWrite = append(bytesToWrite, entry.Value...)
 	}
 
 	_, err = w.writer.Write(bytesToWrite)
@@ -60,7 +55,7 @@ func (w *WAL) Log(key string, value []byte) error {
 	return nil
 }
 
-func (w *WAL) ParseLogs() ([]WALEntry, error) {
+func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 	rfile, err := os.Open(w.source)
 	if err != nil {
 		return nil, fmt.Errorf("WAL %q can not be opened: %v", w.source, err)
@@ -117,10 +112,10 @@ func (w *WAL) ParseLogs() ([]WALEntry, error) {
 	return pairs, nil
 }
 
-func (w *WAL) Clear() error {
+func (w *DiskWAL) Clear() error {
 	return os.Truncate(w.source, 0)
 }
 
-func (w *WAL) Close() error {
+func (w *DiskWAL) Close() error {
 	return w.writer.Close()
 }

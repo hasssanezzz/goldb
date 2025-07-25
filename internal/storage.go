@@ -13,12 +13,12 @@ import (
 // with disk operations, the value manager will depend on the storage manager.
 
 type StorageManager struct {
-	writer   shared.WriteSeekCloser
+	writer   WriteSeekCloser
 	reader   io.ReadSeekCloser
 	filename string
 }
 
-func NewStorageManager(filename string) (*StorageManager, error) {
+func NewStorageManager(filename string) (DataManager, error) {
 	sm := &StorageManager{filename: filename}
 	return sm, sm.Open()
 }
@@ -37,30 +37,30 @@ func (s *StorageManager) Open() error {
 	return nil
 }
 
-func (s *StorageManager) WriteValue(value []byte) (uint32, error) {
+func (s *StorageManager) Store(value []byte) (Position, error) {
 	offset, err := s.writer.Seek(0, io.SeekEnd)
 	if err != nil {
-		return 0, fmt.Errorf("storage manager can not seek to end: %v", err)
+		return Position{}, fmt.Errorf("storage manager can not seek to end: %v", err)
 	}
 
 	_, err = s.writer.Write(value)
 	if err != nil {
-		return 0, fmt.Errorf("storage manager can not write value %q: %v", value, err)
+		return Position{}, fmt.Errorf("storage manager can not write value %q: %v", value, err)
 	}
-	return uint32(offset), err
+	return Position{uint32(offset), uint32(len(value))}, err
 }
 
-// ReadValue read a value in frmo KV pair based on size and offset
-func (s *StorageManager) ReadValue(indexNode IndexNode) ([]byte, error) {
-	if indexNode.Size == 0 {
+// Retrieve get a value based on node position
+func (s *StorageManager) Retrieve(postion Position) ([]byte, error) {
+	if postion.Size == 0 {
 		return nil, &shared.ErrKeyNotFound{}
 	}
 
-	_, err := s.reader.Seek(int64(indexNode.Offset), io.SeekStart)
+	_, err := s.reader.Seek(int64(postion.Offset), io.SeekStart)
 	if err != nil {
-		return []byte{}, fmt.Errorf("storage manager can not read (%d, %d): %v", indexNode.Offset, indexNode.Size, err)
+		return []byte{}, fmt.Errorf("storage manager can not read (%d, %d): %v", postion.Offset, postion.Size, err)
 	}
-	buf := make([]byte, indexNode.Size)
+	buf := make([]byte, postion.Size)
 	_, err = s.reader.Read(buf)
 	if err != nil {
 		return nil, err

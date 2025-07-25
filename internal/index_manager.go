@@ -17,7 +17,7 @@ import (
 // IndexManager handles the indexing of keys across the memtable, SSTables, and levels.
 // It ensures that keys are efficiently located and manages the compaction process.
 type IndexManager struct {
-	Memtable   *Table // In-memory AVL tree for temporary storage.
+	Memtable   Memtable
 	config     *shared.EngineConfig
 	currSerial int        // Current serial number for SSTables.
 	lvlSerial  int        // Current serial number for levels.
@@ -66,13 +66,13 @@ func (im *IndexManager) ParseHomeDir() error {
 // Get retrieves the IndexNode for the given key.
 // It searches the memtable, SSTables, and levels in order of recency.
 // Returns ErrKeyNotFound if the key does not exist.
-func (im *IndexManager) Get(key string) (IndexNode, error) {
+func (im *IndexManager) Get(key string) (Position, error) {
 
 	// 1. search in the memtable
 	if im.Memtable.Contains(key) {
 		indexNode := im.Memtable.Get(key)
 		if indexNode.Size == 0 {
-			return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+			return Position{}, &shared.ErrKeyNotFound{Key: key}
 		}
 		return indexNode, nil
 	}
@@ -86,10 +86,10 @@ func (im *IndexManager) Get(key string) (IndexNode, error) {
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*shared.ErrKeyRemoved); ok {
-				return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+				return Position{}, &shared.ErrKeyNotFound{Key: key}
 			}
 			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
-				return IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
+				return Position{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
 			}
 			continue
 		}
@@ -106,10 +106,10 @@ func (im *IndexManager) Get(key string) (IndexNode, error) {
 		result, err := table.BSearch(key)
 		if err != nil {
 			if _, ok := err.(*shared.ErrKeyRemoved); ok {
-				return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+				return Position{}, &shared.ErrKeyNotFound{Key: key}
 			}
 			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
-				return IndexNode{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
+				return Position{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
 			}
 			continue
 		}
@@ -117,7 +117,7 @@ func (im *IndexManager) Get(key string) (IndexNode, error) {
 		return result, nil
 	}
 
-	return IndexNode{}, &shared.ErrKeyNotFound{Key: key}
+	return Position{}, &shared.ErrKeyNotFound{Key: key}
 }
 
 // Delete marks the given key as deleted in the memtable.

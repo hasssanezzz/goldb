@@ -12,8 +12,8 @@ import (
 type Engine struct {
 	Config         shared.EngineConfig
 	indexManager   *IndexManager
-	storageManager *StorageManager
-	wal            *WAL
+	storageManager DataManager
+	wal            WAL
 }
 
 func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
@@ -36,7 +36,7 @@ func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error)
 		return nil, err
 	}
 
-	wal, err := NewWAL(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
+	wal, err := NewDiskWAL(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error)
 }
 
 func (e *Engine) setEntriesFromWAL() error {
-	entries, err := e.wal.ParseLogs()
+	entries, err := e.wal.Retrieve()
 	if err != nil {
 		println("error parsing the logs")
 		return err
@@ -109,7 +109,7 @@ func (e *Engine) Get(key string) ([]byte, error) {
 		return nil, fmt.Errorf("db engine can not locate key (%q): %v", key, err)
 	}
 
-	data, err := e.storageManager.ReadValue(indexNode)
+	data, err := e.storageManager.Retrieve(indexNode)
 	if err != nil {
 		if e, ok := err.(*shared.ErrKeyNotFound); ok {
 			e.Key = key
@@ -132,15 +132,15 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 		// when would I ignore writing to the WAL?
 		// when the I am setting KV pairs from the WAL I don't want to rewrite
 		// the pairs coming from the WAL to the WAL again.
-		if err := e.wal.Log(key, value); err != nil {
+		if err := e.wal.Append(WALEntry{key, value}); err != nil {
 			return err
 		}
 	}
 
 	// periodic flush, after the memtable hits its threshold
-	if e.indexManager.Memtable.Size >= e.Config.MemtableSizeThreshold {
-		// TODO - add locks to avoid concurrency issues.
-		// NOTE - I temporary removed the `go` keyword
+	if e.indexManager.Memtable.Size() >= e.Config.MemtableSizeThreshold {
+		// TODO: add latches to avoid concurrency issues.
+		// NOTE: I temporary removed the `go` keyword
 		func() {
 			err := e.indexManager.Flush()
 			if err != nil {
@@ -157,16 +157,13 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 		}
 	}
 
-	offset, err := e.storageManager.WriteValue(value)
+	position, err := e.storageManager.Store(value)
 	if err != nil {
 		return fmt.Errorf("engine failed to write (%q, %x): %v", key, value, err)
 	}
 	e.indexManager.Memtable.Set(KVPair{
-		Key: key,
-		Value: IndexNode{
-			Offset: offset,
-			Size:   uint32(len(value)),
-		},
+		Key:   key,
+		Value: position,
 	})
 	return nil
 }
@@ -183,7 +180,7 @@ func (e *Engine) Delete(key string, ignoreWAL ...bool) error {
 		// when would I ignore writing to the WAL?
 		// when the I am setting KV pairs from the WAL I don't want to rewrite
 		// the pairs coming from the WAL to the WAL again.
-		if err := e.wal.Log(key, []byte{}); err != nil {
+		if err := e.wal.Append(WALEntry{key, []byte{}}); err != nil {
 			return err
 		}
 	}
