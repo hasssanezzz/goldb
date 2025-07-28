@@ -27,6 +27,10 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 	// check if this is a prefix scan query
 	prefix := r.Header.Get("prefix")
 	if len(prefix) > 0 {
+		if prefix == "*" {
+			prefix = ""
+		}
+
 		results, err := api.DB.Scan(prefix)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

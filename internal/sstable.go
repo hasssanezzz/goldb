@@ -38,7 +38,7 @@ func NewSSTable(metadata TableMetadata, config *shared.EngineConfig) (*SSTable, 
 }
 
 func (s *SSTable) Keys() ([]string, error) {
-	results := make([]string, s.metadata.Size)
+	results := make([]string, 0, s.metadata.Size)
 
 	pairSize := int(s.config.GetKVPairSize())
 	if _, err := s.file.Seek(int64(s.config.GetMetadataSize()), io.SeekStart); err != nil {
@@ -51,9 +51,13 @@ func (s *SSTable) Keys() ([]string, error) {
 	}
 
 	for i := 0; i < int(s.metadata.Size); i++ {
-		keyStartIndex := i * pairSize
-		keyEndIndex := keyStartIndex + shared.KeySize
-		results[i] = shared.TrimPaddedKey(string(buffer[keyStartIndex:keyEndIndex]))
+		window := buffer[i*pairSize : (i*pairSize)+pairSize]
+		key := window[:shared.KeySize]
+		size := binary.LittleEndian.Uint32(window[shared.KeySize+4 : shared.KeySize+8])
+
+		if size > 0 {
+			results = append(results, shared.TrimPaddedKey(string(key)))
+		}
 	}
 
 	return results, nil
@@ -76,12 +80,14 @@ func (s *SSTable) Items() ([]KVPair, error) {
 		window := buffer[i*pairSize : (i*pairSize)+pairSize]
 		key := window[:shared.KeySize]
 		offset := binary.LittleEndian.Uint32(window[shared.KeySize : shared.KeySize+4])
-		size := binary.LittleEndian.Uint32(window[shared.KeySize : shared.KeySize+4])
+		size := binary.LittleEndian.Uint32(window[shared.KeySize+4 : shared.KeySize+8])
 
-		results = append(results, KVPair{
+		// TODO: should I skip deleted keys?
+
+		results[i] = KVPair{
 			Key:   shared.TrimPaddedKey(string(key)),
 			Value: Position{offset, size},
-		})
+		}
 	}
 
 	return results, nil

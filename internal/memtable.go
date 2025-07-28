@@ -29,7 +29,8 @@ func (t *AVLTable) Set(pair KVPair) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.get(t.root, pair.Key).Size == 0 {
+	_, found := t.get(t.root, pair.Key)
+	if !found {
 		t.size++
 	}
 	t.root = t.insert(t.root, pair.Key, pair.Value)
@@ -39,14 +40,15 @@ func (t *AVLTable) Get(key string) Position {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return t.get(t.root, key)
+	result, _ := t.get(t.root, key)
+	return result
 }
 
 func (t *AVLTable) Contains(key string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	return t.get(t.root, key).Size != 0
+	_, found := t.get(t.root, key)
+	return found
 }
 
 func (t *AVLTable) Items() []KVPair {
@@ -156,13 +158,13 @@ func (t *AVLTable) insert(node *treeNode, key string, value Position) *treeNode 
 	return t.balance(node, key)
 }
 
-func (t *AVLTable) get(node *treeNode, key string) Position {
+func (t *AVLTable) get(node *treeNode, key string) (Position, bool) {
 	if node == nil {
-		return Position{}
+		return Position{}, false
 	}
 
 	if node.key == key {
-		return node.value
+		return node.value, true
 	} else if node.key > key {
 		return t.get(node.left, key)
 	} else {

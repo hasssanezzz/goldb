@@ -195,6 +195,10 @@ func (im *IndexManager) Keys() ([]string, error) {
 	// Add keys from the memtable (in-memory, likely fast, can be sequential)
 	memtablePairs := im.memtable.Items()
 	for _, pair := range memtablePairs {
+		if pair.Value.Size == 0 {
+			delete(final, pair.Key)
+			continue
+		}
 		final[pair.Key] = struct{}{}
 	}
 
@@ -241,15 +245,6 @@ func (im *IndexManager) readTable(filename string) error {
 	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config)
 	if err != nil {
 		return fmt.Errorf("index manager can not parse table %q: %v", filename, err)
-	}
-
-	items, err := table.Items()
-	if err != nil {
-		panic(err)
-	}
-
-	for _, item := range items {
-		fmt.Println("Item:", item)
 	}
 
 	// 2. add the table to the list
