@@ -9,12 +9,12 @@ const KeySize = 256
 
 func KeyToBytes(key string) []byte {
 	keyBytes := []byte(key)
-	if len(keyBytes) > 256 {
-		return keyBytes[:256] // truncate
+	if len(keyBytes) > KeySize {
+		return keyBytes[:KeySize] // truncate
 	}
 
 	// Pad with null bytes
-	padded := make([]byte, 256)
+	padded := make([]byte, KeySize)
 	copy(padded, keyBytes)
 	return padded
 }

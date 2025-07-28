@@ -51,16 +51,16 @@ func (s *DiskDataManager) Store(value []byte) (Position, error) {
 }
 
 // Retrieve gets a value based on node position
-func (s *DiskDataManager) Retrieve(postion Position) ([]byte, error) {
-	if postion.Size == 0 {
+func (s *DiskDataManager) Retrieve(position Position) ([]byte, error) {
+	if position.Size == 0 {
 		return nil, &shared.ErrKeyNotFound{}
 	}
 
-	_, err := s.reader.Seek(int64(postion.Offset), io.SeekStart)
+	_, err := s.reader.Seek(int64(position.Offset), io.SeekStart)
 	if err != nil {
-		return []byte{}, fmt.Errorf("storage manager can not read (%d, %d): %v", postion.Offset, postion.Size, err)
+		return []byte{}, fmt.Errorf("storage manager can not read (%d, %d): %v", position.Offset, position.Size, err)
 	}
-	buf := make([]byte, postion.Size)
+	buf := make([]byte, position.Size)
 	_, err = s.reader.Read(buf)
 	if err != nil {
 		return nil, err

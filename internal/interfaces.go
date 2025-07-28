@@ -17,10 +17,6 @@ type Memtable interface {
 	Size() uint32
 }
 
-type StorageManager interface {
-	Temp()
-}
-
 // DataManager is responsible for managing pair values
 type DataManager interface {
 	Store([]byte) (Position, error)

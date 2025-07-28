@@ -38,28 +38,50 @@ func NewSSTable(metadata TableMetadata, config *shared.EngineConfig) (*SSTable, 
 }
 
 func (s *SSTable) Keys() ([]string, error) {
-	results := []string{}
+	results := make([]string, s.metadata.Size)
+
+	pairSize := int(s.config.GetKVPairSize())
+	if _, err := s.file.Seek(int64(s.config.GetMetadataSize()), io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek at GetMetadatasize: %v", err)
+	}
+
+	buffer := make([]byte, pairSize*int(s.metadata.Size))
+	if _, err := s.file.Read(buffer); err != nil {
+		return nil, fmt.Errorf("failed to read from file: %v", err)
+	}
 
 	for i := 0; i < int(s.metadata.Size); i++ {
-		pair, err := s.nthKey(i)
-		if err != nil {
-			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
-		}
-		results = append(results, pair.Key)
+		keyStartIndex := i * pairSize
+		keyEndIndex := keyStartIndex + shared.KeySize
+		results[i] = shared.TrimPaddedKey(string(buffer[keyStartIndex:keyEndIndex]))
 	}
 
 	return results, nil
 }
 
 func (s *SSTable) Items() ([]KVPair, error) {
-	results := []KVPair{}
+	results := make([]KVPair, s.metadata.Size)
 
-	for i := 0; i < int(s.metadata.Size); i++ {
-		pair, err := s.nthKey(i)
-		if err != nil {
-			return nil, fmt.Errorf("sstable seq scan can not read %dth key: %v", i, err)
-		}
-		results = append(results, pair)
+	pairSize := s.config.GetKVPairSize()
+	if _, err := s.file.Seek(int64(s.config.GetMetadataSize()), io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek at GetMetadatasize: %v", err)
+	}
+
+	buffer := make([]byte, pairSize*s.metadata.Size)
+	if _, err := s.file.Read(buffer); err != nil {
+		return nil, fmt.Errorf("failed to read from file: %v", err)
+	}
+
+	for i := range s.metadata.Size {
+		window := buffer[i*pairSize : (i*pairSize)+pairSize]
+		key := window[:shared.KeySize]
+		offset := binary.LittleEndian.Uint32(window[shared.KeySize : shared.KeySize+4])
+		size := binary.LittleEndian.Uint32(window[shared.KeySize : shared.KeySize+4])
+
+		results = append(results, KVPair{
+			Key:   shared.TrimPaddedKey(string(key)),
+			Value: Position{offset, size},
+		})
 	}
 
 	return results, nil

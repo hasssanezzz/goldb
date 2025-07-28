@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/hasssanezzz/goldb/shared"
 )
@@ -151,25 +152,54 @@ func (im *IndexManager) Flush() error {
 // It includes keys from the memtable, SSTables, and levels.
 // Returns an error if any SSTable or level cannot be read.
 func (im *IndexManager) Keys() ([]string, error) {
-	// TODO get keys from levels
-	final := map[string]struct{}{}
+	// Use a map to store unique keys
+	final := make(map[string]struct{})
+	var finalMu sync.Mutex // Protects access to 'final'
+	var wg sync.WaitGroup  // Waits for all goroutines to finish
+	var firstError error   // Captures the first error encountered
+	var errMu sync.Mutex   // Protects access to 'firstError'
 
-	for _, table := range im.sstables {
-		keys, err := table.Keys()
-		if err != nil {
-			return nil, err
-		}
-		for _, key := range keys {
-			final[key] = struct{}{}
-		}
+	tables := append(im.sstables, im.levels...) // Combine SSTables and Levels
+
+	for _, table := range tables {
+		wg.Add(1)
+		go func(t *SSTable) {
+			defer wg.Done()
+			keys, err := t.Keys()
+			if err != nil {
+				errMu.Lock()
+				if firstError == nil {
+					firstError = err
+				}
+				errMu.Unlock()
+				return
+			}
+			finalMu.Lock()
+			for _, key := range keys {
+				final[key] = struct{}{}
+			}
+			finalMu.Unlock()
+		}(table)
 	}
 
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	errMu.Lock()
+	if firstError != nil {
+		errMu.Unlock()
+		return nil, firstError
+	}
+	errMu.Unlock()
+
+	// Add keys from the memtable (in-memory, likely fast, can be sequential)
 	memtablePairs := im.memtable.Items()
 	for _, pair := range memtablePairs {
 		final[pair.Key] = struct{}{}
 	}
 
-	results := []string{}
+	// Convert the map keys to a slice for the final result
+	results := make([]string, 0, len(final))
 	for key := range final {
 		results = append(results, key)
 	}
@@ -211,6 +241,15 @@ func (im *IndexManager) readTable(filename string) error {
 	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config)
 	if err != nil {
 		return fmt.Errorf("index manager can not parse table %q: %v", filename, err)
+	}
+
+	items, err := table.Items()
+	if err != nil {
+		panic(err)
+	}
+
+	for _, item := range items {
+		fmt.Println("Item:", item)
 	}
 
 	// 2. add the table to the list
