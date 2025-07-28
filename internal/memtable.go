@@ -1,5 +1,7 @@
 package internal
 
+import "sync"
+
 type treeNode struct {
 	key    string
 	value  Position
@@ -13,55 +15,68 @@ type Position struct {
 	Size   uint32
 }
 
-type Table struct {
+type AVLTable struct {
 	size uint32
 	root *treeNode
+	mu   sync.RWMutex
 }
 
 func NewAVLMemtable() Memtable {
-	return &Table{}
+	return &AVLTable{}
 }
 
-func (t *Table) Set(pair KVPair) {
-	if !t.Contains(pair.Key) {
+func (t *AVLTable) Set(pair KVPair) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.get(t.root, pair.Key).Size == 0 {
 		t.size++
 	}
 	t.root = t.insert(t.root, pair.Key, pair.Value)
 }
 
-func (t *Table) Get(key string) Position {
+func (t *AVLTable) Get(key string) Position {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
 	return t.get(t.root, key)
 }
 
-func (t *Table) Contains(key string) bool {
+func (t *AVLTable) Contains(key string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
 	return t.get(t.root, key).Size != 0
 }
 
-func (t *Table) Items() []KVPair {
+func (t *AVLTable) Items() []KVPair {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
 	r := []KVPair{}
 	t.inOrder(t.root, &r)
 	return r
 }
 
-func (t *Table) Size() uint32 {
+func (t *AVLTable) Size() uint32 {
 	return t.size
 }
 
-func (t *Table) height(node *treeNode) int {
+func (t *AVLTable) height(node *treeNode) int {
 	if node == nil {
 		return 0
 	}
 	return node.height
 }
 
-func (t *Table) balanceFactor(node *treeNode) int {
+func (t *AVLTable) balanceFactor(node *treeNode) int {
 	if node == nil {
 		return 0
 	}
 	return t.height(node.left) - t.height(node.right)
 }
 
-func (t *Table) rightRotate(y *treeNode) *treeNode {
+func (t *AVLTable) rightRotate(y *treeNode) *treeNode {
 	x := y.left
 	T2 := x.right
 
@@ -77,7 +92,7 @@ func (t *Table) rightRotate(y *treeNode) *treeNode {
 	return x
 }
 
-func (t *Table) leftRotate(x *treeNode) *treeNode {
+func (t *AVLTable) leftRotate(x *treeNode) *treeNode {
 	y := x.right
 	T2 := y.left
 
@@ -93,7 +108,7 @@ func (t *Table) leftRotate(x *treeNode) *treeNode {
 	return y
 }
 
-func (t *Table) balance(node *treeNode, key string) *treeNode {
+func (t *AVLTable) balance(node *treeNode, key string) *treeNode {
 	balance := t.balanceFactor(node)
 
 	// left left case
@@ -121,7 +136,7 @@ func (t *Table) balance(node *treeNode, key string) *treeNode {
 	return node
 }
 
-func (t *Table) insert(node *treeNode, key string, value Position) *treeNode {
+func (t *AVLTable) insert(node *treeNode, key string, value Position) *treeNode {
 	// perform normal bst insertion
 	if node == nil {
 		return &treeNode{key: key, value: value, height: 1}
@@ -141,7 +156,7 @@ func (t *Table) insert(node *treeNode, key string, value Position) *treeNode {
 	return t.balance(node, key)
 }
 
-func (t *Table) get(node *treeNode, key string) Position {
+func (t *AVLTable) get(node *treeNode, key string) Position {
 	if node == nil {
 		return Position{}
 	}
@@ -155,7 +170,7 @@ func (t *Table) get(node *treeNode, key string) Position {
 	}
 }
 
-func (t *Table) inOrder(node *treeNode, result *[]KVPair) {
+func (t *AVLTable) inOrder(node *treeNode, result *[]KVPair) {
 	if node != nil {
 		t.inOrder(node.left, result)
 		*result = append(*result, KVPair{node.key, node.value})

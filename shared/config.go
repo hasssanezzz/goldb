@@ -1,7 +1,9 @@
 package shared
 
+const UintSize = 4
+
 var DefaultConfig = EngineConfig{
-	KeySize:               256,
+	KeySize:               KeySize,
 	MemtableSizeThreshold: 1000,
 	CompactionThreshold:   10,
 	SSTableNamePrefix:     "sst_",
@@ -59,7 +61,7 @@ func (ec *EngineConfig) WithLevelFileNamePrefix(value string) *EngineConfig {
 // Returns the total size in bytes.
 func (ec *EngineConfig) GetMetadataSize() uint32 {
 	// TODO: this is very wrong, if the metadata struct changes this will not be reflected
-	return ec.KeySize*2 + UintSize*2
+	return ec.KeySize*2 + UintSize*2 + 1
 }
 
 // GetKVPairSize calculates the size of a key-value pair in an SSTable.

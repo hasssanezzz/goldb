@@ -4,8 +4,6 @@ import (
 	"fmt"
 )
 
-const UintSize = 4
-
 type ErrKeyTooLong struct {
 	Key     string
 	KeySize uint32

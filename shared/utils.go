@@ -4,14 +4,19 @@ import (
 	"strings"
 )
 
-func KeyToBytes(key string, keySize uint32) ([]byte, error) {
-	keyByteLength := len([]byte(key))
-	paddedKey := key + strings.Repeat(string("\x00"), int(keySize)-keyByteLength)
-	results := []byte(paddedKey)
-	if len(results) != int(keySize) {
-		return nil, &ErrKeyTooLong{key, keySize}
+// TODO: disallow \x00 in keys
+const KeySize = 256
+
+func KeyToBytes(key string) []byte {
+	keyBytes := []byte(key)
+	if len(keyBytes) > 256 {
+		return keyBytes[:256] // truncate
 	}
-	return results, nil
+
+	// Pad with null bytes
+	padded := make([]byte, 256)
+	copy(padded, keyBytes)
+	return padded
 }
 
 // TrimPaddedKey removes the null bytes from the end of a string.

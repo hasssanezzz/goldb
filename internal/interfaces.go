@@ -11,10 +11,14 @@ type WALEntry struct {
 
 type Memtable interface {
 	Set(KVPair)
-	Get(key string) Position
-	Contains(key string) bool
+	Get(string) Position
+	Contains(string) bool
 	Items() []KVPair
 	Size() uint32
+}
+
+type StorageManager interface {
+	Temp()
 }
 
 // DataManager is responsible for managing pair values

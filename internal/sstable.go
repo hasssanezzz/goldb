@@ -25,67 +25,16 @@ type SSTable struct {
 }
 
 func NewSSTable(metadata TableMetadata, config *shared.EngineConfig) (*SSTable, error) {
-	table := &SSTable{config: config}
-	table.metadata = metadata
+	table := &SSTable{
+		config:   config,
+		metadata: metadata,
+	}
 
 	if err := table.open(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create logical SST: %v", err)
 	}
 
 	return table, nil
-}
-
-func (s *SSTable) open() error {
-	file, err := os.Open(s.metadata.Path)
-	if err != nil {
-		return fmt.Errorf("can not open sstable %q: %v", s.metadata.Path, err)
-	}
-	s.file = file
-	s.ParseMetadata()
-	return nil
-}
-
-func (s *SSTable) ParseMetadata() error {
-	uintBuffer := make([]byte, shared.UintSize)
-	keyBuffer := make([]byte, s.config.KeySize)
-
-	// read isLevel
-	isLevelBuffer := make([]byte, 1)
-	_, err := s.file.Read(isLevelBuffer)
-	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
-	}
-	s.metadata.IsLevel = isLevelBuffer[0] == 0xFF
-
-	// read serial
-	_, err = s.file.Read(uintBuffer)
-	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
-	}
-	s.metadata.Serial = binary.LittleEndian.Uint32(uintBuffer)
-
-	// read pair count
-	_, err = s.file.Read(uintBuffer)
-	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
-	}
-	s.metadata.Size = binary.LittleEndian.Uint32(uintBuffer)
-
-	// read min key
-	_, err = s.file.Read(keyBuffer)
-	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
-	}
-	s.metadata.MinKey = shared.TrimPaddedKey(string(keyBuffer))
-
-	// read max key
-	_, err = s.file.Read(keyBuffer)
-	if err != nil {
-		return fmt.Errorf("can not read metadata from sstable %q: %v", s.metadata.Path, err)
-	}
-	s.metadata.MaxKey = shared.TrimPaddedKey(string(keyBuffer))
-
-	return nil
 }
 
 func (s *SSTable) Keys() ([]string, error) {
@@ -180,4 +129,18 @@ func (s *SSTable) nthKey(n int) (KVPair, error) {
 			Size:   size,
 		},
 	}, nil
+}
+
+func (s *SSTable) open() error {
+	file, err := os.Open(s.metadata.Path)
+	if err != nil {
+		return fmt.Errorf("can not open sstable %q: %v", s.metadata.Path, err)
+	}
+	s.file = file
+
+	if err := s.metadata.Deserialize(file); err != nil {
+		return fmt.Errorf("failed to open SST %q: %v", s.metadata.Path, err)
+	}
+
+	return nil
 }

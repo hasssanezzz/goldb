@@ -31,12 +31,12 @@ func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error)
 		return nil, err
 	}
 
-	storageManager, err := NewStorageManager(filepath.Join(homepath, "data.bin"))
+	storageManager, err := NewDiskDataManager(filepath.Join(homepath, "data.bin"))
 	if err != nil {
 		return nil, err
 	}
 
-	wal, err := NewDiskWAL(filepath.Join(homepath, "wal.log.bin"), config.KeySize)
+	wal, err := NewDiskWAL(filepath.Join(homepath, "wal.log.bin"))
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +137,8 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 		}
 	}
 
-	// periodic flush, after the memtable hits its threshold
-	if e.indexManager.Memtable.Size() >= e.Config.MemtableSizeThreshold {
+	// Flush if the memtable exceeds its threshold
+	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold {
 		// TODO: add latches to avoid concurrency issues.
 		// NOTE: I temporary removed the `go` keyword
 		func() {
@@ -161,10 +161,12 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	if err != nil {
 		return fmt.Errorf("engine failed to write (%q, %x): %v", key, value, err)
 	}
-	e.indexManager.Memtable.Set(KVPair{
+
+	e.indexManager.memtable.Set(KVPair{
 		Key:   key,
 		Value: position,
 	})
+
 	return nil
 }
 

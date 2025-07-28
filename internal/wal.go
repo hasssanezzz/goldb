@@ -6,18 +6,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/hasssanezzz/goldb/shared"
 )
 
 type DiskWAL struct {
-	keySize uint32
-	source  string
-	writer  *os.File
+	source string
+	writer io.WriteCloser
+	mu     sync.Mutex
 }
 
-func NewDiskWAL(source string, keySize uint32) (WAL, error) {
-	w := &DiskWAL{source: source, keySize: keySize}
+func NewDiskWAL(source string) (WAL, error) {
+	w := &DiskWAL{source: source}
 	return w, w.Open()
 }
 
@@ -31,23 +32,23 @@ func (w *DiskWAL) Open() error {
 }
 
 func (w *DiskWAL) Append(entry WALEntry) error {
-	bytesToWrite, err := shared.KeyToBytes(entry.Key, w.keySize)
-	if err != nil {
-		return err
-	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	valueLengthBuff := make([]byte, 4)
-	valueLength := uint32(len(entry.Value))
-	binary.LittleEndian.PutUint32(valueLengthBuff, valueLength)
-	bytesToWrite = append(bytesToWrite, valueLengthBuff...)
+	buffer := make([]byte, 0, shared.KeySize+shared.UintSize+len(entry.Value))
 
-	// if len(value) == 0 then this is a delete operation
-	// if not, this is a set/put operation
+	// Key (256 bytes)
+	buffer = append(buffer, shared.KeyToBytes(entry.Key)...)
+
+	// Value size (4 bytes)
+	binary.LittleEndian.AppendUint32(buffer, uint32(len(entry.Value)))
+
+	// Value (variable length)
 	if len(entry.Value) > 0 {
-		bytesToWrite = append(bytesToWrite, entry.Value...)
+		buffer = append(buffer, entry.Value...)
 	}
 
-	_, err = w.writer.Write(bytesToWrite)
+	_, err := w.writer.Write(buffer)
 	if err != nil {
 		return fmt.Errorf("WAL %q can not write log: %v", w.source, err)
 	}
@@ -56,6 +57,10 @@ func (w *DiskWAL) Append(entry WALEntry) error {
 }
 
 func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// TODO: seperate decoding binary objects logic to a specialized component
 	rfile, err := os.Open(w.source)
 	if err != nil {
 		return nil, fmt.Errorf("WAL %q can not be opened: %v", w.source, err)
@@ -69,10 +74,12 @@ func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 	}
 
 	pairs := []WALEntry{}
-	mp := map[string][]byte{}
+	mp := map[string][]byte{} // to get the latest values of duplicate keys
 
 	for {
-		keyBytes, vlength := make([]byte, w.keySize), make([]byte, 4)
+		keyBytes, vlength := make([]byte, shared.KeySize), make([]byte, 4)
+
+		// Read key
 		_, err = buf.Read(keyBytes)
 		if err != nil {
 			if err == io.EOF {
@@ -82,6 +89,7 @@ func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 			}
 		}
 
+		// Read value length
 		_, err = buf.Read(vlength)
 		if err != nil {
 			if err == io.EOF {
@@ -91,6 +99,7 @@ func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 			}
 		}
 
+		// Read value
 		value := make([]byte, binary.LittleEndian.Uint32(vlength))
 		_, err = buf.Read(value)
 		if err != nil {
@@ -101,7 +110,6 @@ func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 			}
 		}
 
-		// add to the to map not the pairs array for compaction
 		mp[shared.TrimPaddedKey(string(keyBytes))] = value
 	}
 
@@ -113,6 +121,9 @@ func (w *DiskWAL) Retrieve() ([]WALEntry, error) {
 }
 
 func (w *DiskWAL) Clear() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	return os.Truncate(w.source, 0)
 }
 

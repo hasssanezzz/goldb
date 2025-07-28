@@ -1,10 +1,7 @@
 package internal
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,7 +14,7 @@ import (
 // IndexManager handles the indexing of keys across the memtable, SSTables, and levels.
 // It ensures that keys are efficiently located and manages the compaction process.
 type IndexManager struct {
-	Memtable   Memtable
+	memtable   Memtable
 	config     *shared.EngineConfig
 	currSerial int        // Current serial number for SSTables.
 	lvlSerial  int        // Current serial number for levels.
@@ -30,47 +27,26 @@ type IndexManager struct {
 // Returns an error if the directory cannot be accessed or if SSTables cannot be parsed.
 func NewIndexManager(config *shared.EngineConfig) (*IndexManager, error) {
 	im := &IndexManager{
-		Memtable:   NewAVLMemtable(),
+		memtable:   NewAVLMemtable(),
 		config:     config,
 		currSerial: 1, // starting from one to reserve number zero
 		lvlSerial:  1, // level 0 for SSTables only
 	}
 
-	if err := im.ParseHomeDir(); err != nil {
+	if err := im.parseHomeDir(); err != nil {
 		return nil, err
 	}
 
 	return im, nil
 }
 
-func (im *IndexManager) ParseHomeDir() error {
-	files, err := os.ReadDir(im.config.Homepath)
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		name := file.Name()
-
-		if strings.HasPrefix(name, im.config.SSTableNamePrefix) || strings.HasPrefix(name, im.config.LevelFileNamePrefix) {
-			err := im.readTable(name)
-			if err != nil {
-				log.Printf("index manager: failed to parse file %q: %v\n", name, err)
-			}
-		}
-	}
-
-	return nil
-}
-
 // Get retrieves the IndexNode for the given key.
 // It searches the memtable, SSTables, and levels in order of recency.
 // Returns ErrKeyNotFound if the key does not exist.
 func (im *IndexManager) Get(key string) (Position, error) {
-
 	// 1. search in the memtable
-	if im.Memtable.Contains(key) {
-		indexNode := im.Memtable.Get(key)
+	if im.memtable.Contains(key) {
+		indexNode := im.memtable.Get(key)
 		if indexNode.Size == 0 {
 			return Position{}, &shared.ErrKeyNotFound{Key: key}
 		}
@@ -123,7 +99,7 @@ func (im *IndexManager) Get(key string) (Position, error) {
 // Delete marks the given key as deleted in the memtable.
 // The key will be removed during the next flush or compaction.
 func (im *IndexManager) Delete(key string) {
-	im.Memtable.Set(KVPair{Key: key})
+	im.memtable.Set(KVPair{Key: key})
 }
 
 // Flush writes the contents of the memtable to disk as a new SSTable.
@@ -138,7 +114,7 @@ func (im *IndexManager) Flush() error {
 	defer file.Close()
 
 	// Initialize the new table's metadata
-	pairs := im.Memtable.Items()
+	pairs := im.memtable.Items()
 	metadata := TableMetadata{
 		Path:    path,
 		IsLevel: false,
@@ -148,19 +124,13 @@ func (im *IndexManager) Flush() error {
 		MaxKey:  pairs[len(pairs)-1].Key,
 	}
 
-	// Serialize the pairs
-	data, err := serializePairs(im.config, pairs, &metadata)
-	if err != nil {
-		return fmt.Errorf("index manager can not serialize pairs %d: %v", im.currSerial, err)
-	}
-
 	// Write the serialized pairs
-	if _, err := file.Write(data); err != nil {
+	if _, err := file.Write(serializePairs(pairs, &metadata)); err != nil {
 		return fmt.Errorf("index manager failed to write serialized pairs %d: %v", im.currSerial, err)
 	}
 
 	// Reset the memtable after successfully serializing it
-	im.Memtable = NewAVLMemtable()
+	im.memtable = NewAVLMemtable()
 
 	// Create a logical SSTable after successfully creating the physical one
 	newSSTable, err := NewSSTable(metadata, im.config)
@@ -172,7 +142,7 @@ func (im *IndexManager) Flush() error {
 	im.currSerial++
 
 	// REMOVE
-	log.Printf("index manager: flushed the memtable successfully, created new table %d", im.currSerial-1)
+	log.Printf("index manager: flushed the memtable successfully, created new table %d with %d pairs", im.currSerial-1, len(pairs))
 
 	return nil
 }
@@ -194,7 +164,7 @@ func (im *IndexManager) Keys() ([]string, error) {
 		}
 	}
 
-	memtablePairs := im.Memtable.Items()
+	memtablePairs := im.memtable.Items()
 	for _, pair := range memtablePairs {
 		final[pair.Key] = struct{}{}
 	}
@@ -271,7 +241,7 @@ func (im *IndexManager) createLevel() error {
 	}
 	defer file.Close()
 
-	allPairs, err := im.getAllUniquePairs()
+	allPairs, err := im.allItemsFromSSTables()
 	if err != nil {
 		return err
 	}
@@ -285,12 +255,11 @@ func (im *IndexManager) createLevel() error {
 		MaxKey:  allPairs[len(allPairs)-1].Key,
 	}
 
-	err = im.serializePairs(file, allPairs, &metadata)
-	if err != nil {
+	if _, err := file.Write(serializePairs(allPairs, &metadata)); err != nil {
 		return fmt.Errorf("index manager can not flush sstable %d: %v", im.currSerial, err)
 	}
 
-	// create a new level
+	// Create a new level
 	level, err := NewSSTable(metadata, im.config)
 	if err != nil {
 		return err
@@ -299,7 +268,7 @@ func (im *IndexManager) createLevel() error {
 	im.lvlSerial++
 	im.levels = append(im.levels, level)
 
-	// delete all sstables (danger)
+	// Delete all sstables (danger)
 	for _, table := range im.sstables {
 		table.Close() // TODO handle closing errors
 		err := os.Remove(table.metadata.Path)
@@ -315,21 +284,21 @@ func (im *IndexManager) createLevel() error {
 	return nil
 }
 
-// getAllUniquePairs retrieves all unique key-value pairs from SSTables.
+// allItemsFromSSTables retrieves all unique key-value pairs from SSTables.
 // It removes duplicates and deleted keys.
 // Returns an error if any SSTable cannot be read.
-func (im *IndexManager) getAllUniquePairs() ([]KVPair, error) {
+func (im *IndexManager) allItemsFromSSTables() ([]KVPair, error) {
 	mp := map[string]*KVPair{}
 	for _, table := range im.sstables {
-		pairs, err := table.Items()
+		items, err := table.Items()
 		if err != nil {
-			return nil, fmt.Errorf("compaction failed to read pairs of table %d: %v", table.metadata.Serial, err)
+			return nil, fmt.Errorf("allPairsFromSSTables failed to read pairs of table %d: %v", table.metadata.Serial, err)
 		}
-		for _, pair := range pairs {
+		for _, pair := range items {
 			// TODO urgent - check deleted keys
-			if pair.Value.Size == 0 {
-				continue
-			}
+			// if pair.Value.Size == 0 {
+			// 	continue
+			// }
 			if _, ok := mp[pair.Key]; ok {
 				continue
 			}
@@ -343,58 +312,9 @@ func (im *IndexManager) getAllUniquePairs() ([]KVPair, error) {
 		pairs[i] = *pair
 	}
 
-	sort.Sort(KVPairSlice(pairs))
+	sort.Sort(Pairs(pairs))
 
 	return pairs, nil
-}
-
-// serializePairs writes key-value pairs to disk in the SSTable format.
-// Returns an error if the pairs cannot be written.
-func (im *IndexManager) serializePairs(w io.Writer, pairs []KVPair, metadata *TableMetadata) error {
-	buffer := bytes.NewBuffer(nil)
-
-	isLevelAsByte := byte(0x00)
-	if metadata.IsLevel {
-		isLevelAsByte = byte(0xFF)
-	}
-
-	binary.Write(buffer, binary.LittleEndian, isLevelAsByte)
-	binary.Write(buffer, binary.LittleEndian, metadata.Serial)
-	binary.Write(buffer, binary.LittleEndian, metadata.Size)
-
-	// Writing min key
-	keyAsBytes, err := shared.KeyToBytes(metadata.MinKey, im.config.KeySize)
-	if err != nil {
-		return err
-	}
-	buffer.Write(keyAsBytes)
-
-	// Writing max key
-	keyAsBytes, err = shared.KeyToBytes(metadata.MaxKey, im.config.KeySize)
-	if err != nil {
-		return err
-	}
-	buffer.Write(keyAsBytes)
-
-	// Write pairs
-	for _, pair := range pairs {
-		// Skip deleted keys
-		if pair.Value.Size == 0 {
-			continue
-		}
-
-		keyAsBytes, err := shared.KeyToBytes(pair.Key, im.config.KeySize)
-		if err != nil {
-			return err
-		}
-
-		buffer.Write(keyAsBytes) // Key is fixed length
-		binary.Write(buffer, binary.LittleEndian, pair.Value.Offset)
-		binary.Write(buffer, binary.LittleEndian, pair.Value.Size)
-	}
-
-	_, err = w.Write(buffer.Bytes())
-	return err
 }
 
 // sortTablesBySerial sorts the list of SSTables and levels by their serial numbers in descending order.
@@ -406,4 +326,24 @@ func (im *IndexManager) sortTablesBySerial() {
 	sort.Slice(im.levels, func(i, j int) bool {
 		return im.levels[i].metadata.Serial > im.levels[j].metadata.Serial
 	})
+}
+
+func (im *IndexManager) parseHomeDir() error {
+	files, err := os.ReadDir(im.config.Homepath)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		name := file.Name()
+
+		if strings.HasPrefix(name, im.config.SSTableNamePrefix) || strings.HasPrefix(name, im.config.LevelFileNamePrefix) {
+			err := im.readTable(name)
+			if err != nil {
+				log.Printf("index manager: failed to parse file %q: %v\n", name, err)
+			}
+		}
+	}
+
+	return nil
 }
