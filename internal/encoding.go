@@ -27,8 +27,6 @@ func (tm *TableMetadata) Serialize() []byte {
 }
 
 func (tm *TableMetadata) Deserialize(r io.Reader) error {
-	result := TableMetadata{}
-
 	uintBuffer := make([]byte, shared.UintSize)
 	keyBuffer := make([]byte, shared.KeySize)
 
@@ -68,7 +66,6 @@ func (tm *TableMetadata) Deserialize(r io.Reader) error {
 	}
 	tm.MaxKey = shared.TrimPaddedKey(string(keyBuffer))
 
-	tm = &result
 	return nil
 }
 

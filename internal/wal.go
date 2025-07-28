@@ -40,8 +40,8 @@ func (w *DiskWAL) Append(entry WALEntry) error {
 	// Key (256 bytes)
 	buffer = append(buffer, shared.KeyToBytes(entry.Key)...)
 
-	// Value size (4 bytes)
-	binary.LittleEndian.AppendUint32(buffer, uint32(len(entry.Value)))
+	// Value size (4 bytes) - FIX: Assign the returned slice
+	buffer = binary.LittleEndian.AppendUint32(buffer, uint32(len(entry.Value)))
 
 	// Value (variable length)
 	if len(entry.Value) > 0 {
@@ -52,7 +52,6 @@ func (w *DiskWAL) Append(entry WALEntry) error {
 	if err != nil {
 		return fmt.Errorf("WAL %q can not write log: %v", w.source, err)
 	}
-
 	return nil
 }
 
