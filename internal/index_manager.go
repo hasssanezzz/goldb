@@ -21,22 +21,30 @@ type IndexManager struct {
 	lvlSerial  int        // Current serial number for levels.
 	sstables   []*SSTable // List of SSTables on disk.
 	levels     []*SSTable // List of levels (merged SSTables).
+	wal        WAL
+
+	mu             sync.RWMutex
+	flushRequested chan struct{}
 }
 
 // NewIndexManager initializes a new IndexManager with the given homepath.
 // It reads existing SSTables and levels from disk and prepares the memtable for writes.
 // Returns an error if the directory cannot be accessed or if SSTables cannot be parsed.
-func NewIndexManager(config *shared.EngineConfig) (*IndexManager, error) {
+func NewIndexManager(config *shared.EngineConfig, wal WAL) (*IndexManager, error) {
 	im := &IndexManager{
-		memtable:   NewAVLMemtable(),
-		config:     config,
-		currSerial: 1, // starting from one to reserve number zero
-		lvlSerial:  1, // level 0 for SSTables only
+		memtable:       NewAVLMemtable(),
+		config:         config,
+		currSerial:     1, // starting from one to reserve number zero
+		lvlSerial:      1, // level 0 for SSTables only
+		wal:            wal,
+		flushRequested: make(chan struct{}),
 	}
 
 	if err := im.parseHomeDir(); err != nil {
 		return nil, err
 	}
+
+	go im.backgroundFlusher()
 
 	return im, nil
 }
@@ -54,7 +62,11 @@ func (im *IndexManager) Get(key string) (Position, error) {
 		return indexNode, nil
 	}
 
-	// 2. search in the SSTables
+	// Acquire read lock for accessing sstables/levels
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+
+	// 2. Search in the SSTables
 	for _, table := range im.sstables {
 		if table.metadata.MinKey > key || table.metadata.MaxKey < key {
 			continue
@@ -74,7 +86,7 @@ func (im *IndexManager) Get(key string) (Position, error) {
 		return result, nil
 	}
 
-	// 3. search in the levels
+	// 3. Search in the levels
 	for _, table := range im.levels {
 		if table.metadata.MinKey > key || table.metadata.MaxKey < key {
 			continue
@@ -103,55 +115,17 @@ func (im *IndexManager) Delete(key string) {
 	im.memtable.Set(KVPair{Key: key})
 }
 
-// Flush writes the contents of the memtable to disk as a new SSTable.
-// It resets the memtable and updates the list of SSTables.
-// Returns an error if the SSTable cannot be created or written.
-func (im *IndexManager) Flush() error {
-	path := filepath.Join(im.config.Homepath, fmt.Sprintf(im.config.SSTableNamePrefix+"%d", im.currSerial))
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// Initialize the new table's metadata
-	pairs := im.memtable.Items()
-	metadata := TableMetadata{
-		Path:    path,
-		IsLevel: false,
-		Size:    uint32(len(pairs)),
-		Serial:  uint32(im.currSerial),
-		MinKey:  pairs[0].Key,
-		MaxKey:  pairs[len(pairs)-1].Key,
-	}
-
-	// Write the serialized pairs
-	if _, err := file.Write(serializePairs(pairs, &metadata)); err != nil {
-		return fmt.Errorf("index manager failed to write serialized pairs %d: %v", im.currSerial, err)
-	}
-
-	// Reset the memtable after successfully serializing it
-	im.memtable = NewAVLMemtable()
-
-	// Create a logical SSTable after successfully creating the physical one
-	newSSTable, err := NewSSTable(metadata, im.config)
-	if err != nil {
-		return err
-	}
-	im.sstables = append(im.sstables, newSSTable)
-	im.sortTablesBySerial()
-	im.currSerial++
-
-	// REMOVE
-	log.Printf("index manager: flushed the memtable successfully, created new table %d with %d pairs", im.currSerial-1, len(pairs))
-
-	return nil
+func (im *IndexManager) Set(pair KVPair) {
+	im.memtable.Set(pair)
 }
 
 // Keys returns a list of all keys in the database.
 // It includes keys from the memtable, SSTables, and levels.
 // Returns an error if any SSTable or level cannot be read.
 func (im *IndexManager) Keys() ([]string, error) {
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+
 	// Use a map to store unique keys
 	final := make(map[string]struct{})
 	var finalMu sync.Mutex // Protects access to 'final'
@@ -228,10 +202,58 @@ func (im *IndexManager) Close() error {
 	return nil
 }
 
-// CompactionCheck checks if the number of SSTables exceeds the threshold.
+func (im *IndexManager) backgroundFlusher() {
+	for range im.flushRequested {
+		im.mu.Lock()
+
+		if err := im.flush(); err != nil {
+			log.Printf("IndexManager background flush failed: %v", err)
+		} else {
+			log.Printf("IndexManager background flush completed successfully.")
+		}
+		im.mu.Unlock()
+	}
+}
+
+// flush writes the contents of the memtable to disk as a new SSTable.
+// It resets the memtable and updates the list of SSTables.
+// Returns an error if the SSTable cannot be created or written.
+func (im *IndexManager) flush() error {
+	// Get all memtable items
+	pairs := im.memtable.Items()
+
+	// Initialize the new table's metadata
+	metadata := TableMetadata{
+		Path:    filepath.Join(im.config.Homepath, fmt.Sprintf(im.config.SSTableNamePrefix+"%d", im.currSerial)),
+		IsLevel: false,
+		Size:    uint32(len(pairs)),
+		Serial:  uint32(im.currSerial),
+		MinKey:  pairs[0].Key,
+		MaxKey:  pairs[len(pairs)-1].Key,
+	}
+
+	// Create a logical SSTable after successfully creating the physical one
+	newSSTable, err := NewSSTable(metadata, im.config, pairs)
+	if err != nil {
+		return fmt.Errorf("IndexManager.Flush failed to create new physical SSTable: %v", err)
+	}
+
+	im.sstables = append(im.sstables, newSSTable)
+	im.sortTablesBySerial()
+	im.currSerial++
+
+	// Reset the memtable after successfully serializing it
+	im.memtable.Reset()
+
+	log.Printf("IndexManager flushed new SSTable %d with %d pairs", im.currSerial-1, len(pairs))
+
+	return im.compactionCheck()
+}
+
+// compactionCheck checks if the number of SSTables exceeds the threshold.
 // If so, it triggers compaction to merge SSTables into a single level.
 // Returns an error if compaction fails.
-func (im *IndexManager) CompactionCheck() error {
+func (im *IndexManager) compactionCheck() error {
 	if len(im.sstables) <= int(im.config.CompactionThreshold) {
 		return nil
 	}
@@ -242,7 +264,7 @@ func (im *IndexManager) CompactionCheck() error {
 func (im *IndexManager) readTable(filename string) error {
 	// 1. create a new sstable
 	fullPath := filepath.Join(im.config.Homepath, filename)
-	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config)
+	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config, nil)
 	if err != nil {
 		return fmt.Errorf("index manager can not parse table %q: %v", filename, err)
 	}
@@ -268,20 +290,14 @@ func (im *IndexManager) readTable(filename string) error {
 // createLevel merges all SSTables into a single level and deletes the original SSTables.
 // Returns an error if the level cannot be created or written.
 func (im *IndexManager) createLevel() error {
-	path := filepath.Join(im.config.Homepath, fmt.Sprintf(im.config.LevelFileNamePrefix+"%d", im.lvlSerial))
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
 	allPairs, err := im.allItemsFromSSTables()
 	if err != nil {
 		return err
 	}
 
+	// Initialize the new table's metadata
 	metadata := TableMetadata{
-		Path:    path,
+		Path:    filepath.Join(im.config.Homepath, fmt.Sprintf(im.config.LevelFileNamePrefix+"%d", im.lvlSerial)),
 		IsLevel: true,
 		Size:    uint32(len(allPairs)),
 		Serial:  uint32(im.lvlSerial),
@@ -289,14 +305,10 @@ func (im *IndexManager) createLevel() error {
 		MaxKey:  allPairs[len(allPairs)-1].Key,
 	}
 
-	if _, err := file.Write(serializePairs(allPairs, &metadata)); err != nil {
-		return fmt.Errorf("index manager can not flush sstable %d: %v", im.currSerial, err)
-	}
-
 	// Create a new level
-	level, err := NewSSTable(metadata, im.config)
+	level, err := NewSSTable(metadata, im.config, allPairs)
 	if err != nil {
-		return err
+		return fmt.Errorf("IndexManager.createLevel failed to create new physical level: %v", err)
 	}
 
 	im.lvlSerial++
@@ -363,6 +375,9 @@ func (im *IndexManager) sortTablesBySerial() {
 }
 
 func (im *IndexManager) parseHomeDir() error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
 	files, err := os.ReadDir(im.config.Homepath)
 	if err != nil {
 		return err

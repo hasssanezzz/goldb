@@ -8,10 +8,6 @@ import (
 	"github.com/hasssanezzz/goldb/shared"
 )
 
-// TODO: make this is a pair value manager not a storage manager, and create
-// a seperate actuall storage manager which concerns itself with dealing
-// with disk operations, the value manager will depend on the storage manager.
-
 type DiskDataManager struct {
 	writer   WriteSeekCloser
 	reader   io.ReadSeekCloser

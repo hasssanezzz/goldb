@@ -24,13 +24,13 @@ type SSTable struct {
 	file     io.ReadSeekCloser
 }
 
-func NewSSTable(metadata TableMetadata, config *shared.EngineConfig) (*SSTable, error) {
+func NewSSTable(metadata TableMetadata, config *shared.EngineConfig, pairs []KVPair) (*SSTable, error) {
 	table := &SSTable{
 		config:   config,
 		metadata: metadata,
 	}
 
-	if err := table.open(); err != nil {
+	if err := table.open(pairs); err != nil {
 		return nil, fmt.Errorf("failed to create logical SST: %v", err)
 	}
 
@@ -159,15 +159,23 @@ func (s *SSTable) nthKey(n int) (KVPair, error) {
 	}, nil
 }
 
-func (s *SSTable) open() error {
-	file, err := os.Open(s.metadata.Path)
+func (s *SSTable) open(pairs []KVPair) error {
+	file, err := os.OpenFile(s.metadata.Path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return fmt.Errorf("can not open sstable %q: %v", s.metadata.Path, err)
 	}
 	s.file = file
 
-	if err := s.metadata.Deserialize(file); err != nil {
-		return fmt.Errorf("failed to open SST %q: %v", s.metadata.Path, err)
+	if pairs == nil {
+		if err := s.metadata.Deserialize(file); err != nil {
+			return fmt.Errorf("failed to open SST %q: %v", s.metadata.Path, err)
+		}
+		return nil
+	}
+
+	// Write the serialized pairs
+	if _, err := file.Write(serializePairs(pairs, &s.metadata)); err != nil {
+		return fmt.Errorf("SSTable[%d] failed to write pairs of length %d: %v", s.metadata.Serial, len(pairs), err)
 	}
 
 	return nil

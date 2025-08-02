@@ -14,6 +14,7 @@ type Memtable interface {
 	Get(string) Position
 	Contains(string) bool
 	Items() []KVPair
+	Reset()
 	Size() uint32
 }
 

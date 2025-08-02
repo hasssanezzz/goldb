@@ -3,63 +3,37 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/hasssanezzz/goldb/cmd/api"
 )
 
-func createHomeDir() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("error getting home directory: %v", err)
-	}
+func parseFlags() (string, string, bool) {
+	addr := flag.String("a", ":3011", "Host to bind the server to")
+	debug := flag.Bool("d", false, "Debug mode")
+	source := flag.String("s", ".goldb", "Path to the source directory")
+	flag.Parse()
 
-	dirPath := filepath.Join(homeDir, ".goldb")
-
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		err := os.MkdirAll(dirPath, 0755)
-		if err != nil {
-			return "", fmt.Errorf("Error creating directory ~/.goldb: %v", err)
-		}
-	}
-	return dirPath, nil
+	return *addr, *source, *debug
 }
 
 func main() {
+	addr, source, debug := parseFlags()
 
-	host := flag.String("h", "localhost", "Host to bind the server to")
-	port := flag.String("p", "3011", "Port to listen on")
-	source := flag.String("s", "~/.goldb", "Path to the source directory")
-
-	if len(os.Args) > 1 && os.Args[1] == "--help" {
-		fmt.Println(`Usage: program [options]
-
-Options:
-  -h, string        Host to bind the server to (default: "localhost")
-  -p, string        Port to listen on (default: "3011")
-  -s, string        Path to the source directory (default: "~/.goldb")
-  --help            Show this help message and exit`)
-		os.Exit(0)
+	if debug {
+		println("[DEBUG MODE]")
+		go func() {
+			http.ListenAndServe("localhost:6060", nil)
+		}()
 	}
 
-	flag.Parse()
-
-	if *source == "~/.goldb" {
-		path, err := createHomeDir()
-		if err != err {
-			log.Fatal(err)
-		}
-		*source = path
-	}
-
-	api, err := api.New(*source)
+	api, err := api.New(source)
 	if err != nil {
 		log.Fatalf("can not open db: %v", err)
 	}
@@ -73,7 +47,7 @@ Options:
 	api.SetupRoutes(mux)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%s", *host, *port),
+		Addr:    addr,
 		Handler: mux,
 	}
 
@@ -89,13 +63,10 @@ Options:
 
 	<-stop
 	log.Println("shutting down server...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	if err := server.Shutdown(ctx); err != nil {
 		log.Fatalf("error during server shutdown: %v", err)
 	}
-
 	log.Println("server gracefully stopped.")
 }

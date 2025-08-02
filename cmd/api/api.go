@@ -16,7 +16,7 @@ type API struct {
 }
 
 func New(source string) (*API, error) {
-	db, err := internal.NewEngine(source)
+	db, err := internal.NewEngine(source, *shared.DefaultConfig.WithMemtableSizeThreshold(1000)) // for debugging
 	if err != nil {
 		return nil, err
 	}

@@ -64,6 +64,13 @@ func (t *AVLTable) Size() uint32 {
 	return t.size
 }
 
+func (t *AVLTable) Reset() {
+	t.mu.Lock()
+	t.root = nil
+	t.size = 0
+	t.mu.Unlock()
+}
+
 func (t *AVLTable) height(node *treeNode) int {
 	if node == nil {
 		return 0

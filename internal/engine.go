@@ -26,17 +26,17 @@ func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error)
 	config.Homepath = homepath
 	e.Config = config
 
-	indexManager, err := NewIndexManager(&config)
+	wal, err := NewDiskWAL(filepath.Join(homepath, "wal.log.bin"))
+	if err != nil {
+		return nil, err
+	}
+
+	indexManager, err := NewIndexManager(&config, wal)
 	if err != nil {
 		return nil, err
 	}
 
 	storageManager, err := NewDiskDataManager(filepath.Join(homepath, "data.bin"))
-	if err != nil {
-		return nil, err
-	}
-
-	wal, err := NewDiskWAL(filepath.Join(homepath, "wal.log.bin"))
 	if err != nil {
 		return nil, err
 	}
@@ -139,21 +139,16 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 
 	// Flush if the memtable exceeds its threshold
 	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold {
-		// TODO: add latches to avoid concurrency issues.
-		// NOTE: I temporary removed the `go` keyword
-		func() {
-			err := e.indexManager.Flush()
-			if err != nil {
-				log.Println("engine periodic flush error: ", err)
-			}
-
-			// if the flush was successful, clear the WAL
-			e.wal.Clear()
-		}()
-
-		err := e.indexManager.CompactionCheck()
-		if err != nil {
-			panic(err)
+		// Signal the IndexManager that a flush might be needed.
+		// Use a non-blocking send to avoid blocking Set if the channel is full.
+		select {
+		case e.indexManager.flushRequested <- struct{}{}:
+			// Signal sent successfully.
+			log.Printf("Flush requested signaled.")
+		default:
+			// Channel buffer is full (flush already requested/not picked up yet).
+			// This is fine, the background goroutine will handle it when ready.
+			log.Printf("Flush request dropped (already queued).")
 		}
 	}
 
@@ -162,7 +157,7 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 		return fmt.Errorf("engine failed to write (%q, %x): %v", key, value, err)
 	}
 
-	e.indexManager.memtable.Set(KVPair{
+	e.indexManager.Set(KVPair{
 		Key:   key,
 		Value: position,
 	})
