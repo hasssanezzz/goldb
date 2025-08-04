@@ -138,7 +138,7 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	}
 
 	// Flush if the memtable exceeds its threshold
-	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold {
+	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold || key == "#F" {
 		// Signal the IndexManager that a flush might be needed.
 		// Use a non-blocking send to avoid blocking Set if the channel is full.
 		select {

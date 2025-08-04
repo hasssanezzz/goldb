@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -55,10 +56,13 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := api.DB.Get(key)
 	if err != nil {
-		if _, ok := err.(*shared.ErrKeyNotFound); ok {
+		var errKeyRemoved *shared.ErrKeyRemoved
+		var errKeyNotFound *shared.ErrKeyNotFound
+		if errors.As(err, &errKeyRemoved) || errors.As(err, &errKeyNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

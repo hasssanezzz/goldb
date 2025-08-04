@@ -61,7 +61,7 @@ func (ec *EngineConfig) WithLevelFileNamePrefix(value string) *EngineConfig {
 // Returns the total size in bytes.
 func (ec *EngineConfig) GetMetadataSize() uint32 {
 	// TODO: this is very wrong, if the metadata struct changes this will not be reflected
-	return ec.KeySize*2 + UintSize*2 + 1
+	return ec.KeySize*2 + UintSize*3 + 1
 }
 
 // GetKVPairSize calculates the size of a key-value pair in an SSTable.
