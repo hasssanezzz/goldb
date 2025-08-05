@@ -8,6 +8,7 @@ var DefaultConfig = EngineConfig{
 	CompactionThreshold:   10,
 	SSTableNamePrefix:     "sst_",
 	LevelFileNamePrefix:   "lvl_",
+	Debug:                 false,
 }
 
 // EngineConfig defines the configuration parameters for the Goldb database engine.
@@ -19,6 +20,7 @@ type EngineConfig struct {
 	SSTableNamePrefix     string // Prefix for SSTable file names.
 	LevelFileNamePrefix   string // Prefix for level file names.
 	Homepath              string // Source directory
+	Debug                 bool
 }
 
 func NewEngineConfig() *EngineConfig {
@@ -29,6 +31,11 @@ func NewEngineConfig() *EngineConfig {
 		LevelFileNamePrefix:   DefaultConfig.LevelFileNamePrefix,
 		CompactionThreshold:   DefaultConfig.CompactionThreshold,
 	}
+}
+
+func (ec *EngineConfig) WithDebug(value bool) *EngineConfig {
+	ec.Debug = value
+	return ec
 }
 
 func (ec *EngineConfig) WithKeySize(value uint32) *EngineConfig {

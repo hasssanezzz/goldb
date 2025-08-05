@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/hasssanezzz/goldb/cmd/api"
+	"github.com/hasssanezzz/goldb/internal"
+	"github.com/hasssanezzz/goldb/shared"
 )
 
 func parseFlags() (string, string, bool) {
@@ -33,12 +35,22 @@ func main() {
 		}()
 	}
 
-	api, err := api.New(source)
+	config := *shared.DefaultConfig.
+		WithMemtableSizeThreshold(500).
+		WithDebug(debug)
+
+	db, err := internal.NewEngine(source, config) // for debugging
+	if err != nil {
+		panic(err)
+	}
+
+	api, err := api.New(source, db)
 	if err != nil {
 		log.Fatalf("can not open db: %v", err)
 	}
+
 	defer func() {
-		if err := api.DB.Close(); err != nil {
+		if err := db.Close(); err != nil {
 			panic(err)
 		}
 	}()

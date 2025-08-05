@@ -202,9 +202,13 @@ func (im *IndexManager) backgroundFlusher() {
 		im.mu.Lock()
 
 		if err := im.flush(); err != nil {
-			log.Printf("IndexManager background flush failed: %v", err)
+			if im.config.Debug {
+				log.Printf("IndexManager background flush failed: %v", err)
+			}
 		} else {
-			log.Printf("IndexManager background flush completed successfully.")
+			if im.config.Debug {
+				log.Printf("IndexManager background flush completed successfully.")
+			}
 		}
 		im.mu.Unlock()
 	}
@@ -279,7 +283,9 @@ func (im *IndexManager) readTable(filename string) error {
 	im.sortTablesBySerial()
 
 	// 4. do some logging
-	log.Printf("index manager: read %s %d with %d pairs\n", filename, table.metadata.Serial, table.metadata.Size)
+	if im.config.Debug {
+		log.Printf("index manager: read %s %d with %d pairs\n", filename, table.metadata.Serial, table.metadata.Size)
+	}
 
 	return nil
 }
