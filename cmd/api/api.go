@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,11 +16,7 @@ type API struct {
 	DB *internal.Engine
 }
 
-func New(source string) (*API, error) {
-	db, err := internal.NewEngine(source, *shared.DefaultConfig.WithMemtableSizeThreshold(1000)) // for debugging
-	if err != nil {
-		return nil, err
-	}
+func New(source string, db *internal.Engine) (*API, error) {
 	return &API{DB: db}, nil
 }
 
@@ -55,10 +52,13 @@ func (api *API) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := api.DB.Get(key)
 	if err != nil {
-		if _, ok := err.(*shared.ErrKeyNotFound); ok {
+		var errKeyRemoved *shared.ErrKeyRemoved
+		var errKeyNotFound *shared.ErrKeyNotFound
+		if errors.As(err, &errKeyRemoved) || errors.As(err, &errKeyNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

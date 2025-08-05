@@ -138,17 +138,21 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 	}
 
 	// Flush if the memtable exceeds its threshold
-	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold {
+	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold || key == "#F" {
 		// Signal the IndexManager that a flush might be needed.
 		// Use a non-blocking send to avoid blocking Set if the channel is full.
 		select {
 		case e.indexManager.flushRequested <- struct{}{}:
 			// Signal sent successfully.
-			log.Printf("Flush requested signaled.")
+			if e.Config.Debug {
+				log.Printf("Flush requested signaled.")
+			}
 		default:
 			// Channel buffer is full (flush already requested/not picked up yet).
 			// This is fine, the background goroutine will handle it when ready.
-			log.Printf("Flush request dropped (already queued).")
+			if e.Config.Debug {
+				log.Printf("Flush request dropped (already queued).")
+			}
 		}
 	}
 

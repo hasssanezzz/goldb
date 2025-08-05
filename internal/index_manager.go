@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -68,17 +69,11 @@ func (im *IndexManager) Get(key string) (Position, error) {
 
 	// 2. Search in the SSTables
 	for _, table := range im.sstables {
-		if table.metadata.MinKey > key || table.metadata.MaxKey < key {
-			continue
-		}
-
-		result, err := table.BSearch(key)
+		result, err := table.Search(key)
 		if err != nil {
-			if _, ok := err.(*shared.ErrKeyRemoved); ok {
+			var errKeyRemoved *shared.ErrKeyRemoved
+			if errors.As(err, &errKeyRemoved) {
 				return Position{}, &shared.ErrKeyNotFound{Key: key}
-			}
-			if _, ok := err.(*shared.ErrKeyNotFound); !ok {
-				return Position{}, fmt.Errorf("index manager can not read key %q from sstable %d: %v", key, table.metadata.Serial, err)
 			}
 			continue
 		}
@@ -92,7 +87,7 @@ func (im *IndexManager) Get(key string) (Position, error) {
 			continue
 		}
 
-		result, err := table.BSearch(key)
+		result, err := table.Search(key)
 		if err != nil {
 			if _, ok := err.(*shared.ErrKeyRemoved); ok {
 				return Position{}, &shared.ErrKeyNotFound{Key: key}
@@ -207,9 +202,13 @@ func (im *IndexManager) backgroundFlusher() {
 		im.mu.Lock()
 
 		if err := im.flush(); err != nil {
-			log.Printf("IndexManager background flush failed: %v", err)
+			if im.config.Debug {
+				log.Printf("IndexManager background flush failed: %v", err)
+			}
 		} else {
-			log.Printf("IndexManager background flush completed successfully.")
+			if im.config.Debug {
+				log.Printf("IndexManager background flush completed successfully.")
+			}
 		}
 		im.mu.Unlock()
 	}
@@ -232,10 +231,10 @@ func (im *IndexManager) flush() error {
 		MaxKey:  pairs[len(pairs)-1].Key,
 	}
 
-	// Create a logical SSTable after successfully creating the physical one
-	newSSTable, err := NewSSTable(metadata, im.config, pairs)
+	// Create a new SSTable after successfully creating the physical one
+	newSSTable, err := serializeSSTable(metadata, im.config, pairs)
 	if err != nil {
-		return fmt.Errorf("IndexManager.Flush failed to create new physical SSTable: %v", err)
+		return fmt.Errorf("IndexManager.readTable failed to serialize table %q: %v", metadata.Path, err)
 	}
 
 	im.sstables = append(im.sstables, newSSTable)
@@ -247,7 +246,9 @@ func (im *IndexManager) flush() error {
 
 	log.Printf("IndexManager flushed new SSTable %d with %d pairs", im.currSerial-1, len(pairs))
 
-	return im.compactionCheck()
+	// TEMP disabling table compaction
+	// return im.compactionCheck()
+	return nil
 }
 
 // compactionCheck checks if the number of SSTables exceeds the threshold.
@@ -264,9 +265,9 @@ func (im *IndexManager) compactionCheck() error {
 func (im *IndexManager) readTable(filename string) error {
 	// 1. create a new sstable
 	fullPath := filepath.Join(im.config.Homepath, filename)
-	table, err := NewSSTable(TableMetadata{Path: fullPath}, im.config, nil)
+	table, err := deserializeSSTable(TableMetadata{Path: fullPath}, im.config)
 	if err != nil {
-		return fmt.Errorf("index manager can not parse table %q: %v", filename, err)
+		return fmt.Errorf("IndexManager.readTable failed to deserialize table %q: %v", filename, err)
 	}
 
 	// 2. add the table to the list
@@ -282,7 +283,9 @@ func (im *IndexManager) readTable(filename string) error {
 	im.sortTablesBySerial()
 
 	// 4. do some logging
-	log.Printf("index manager: read %s %d with %d pairs\n", filename, table.metadata.Serial, table.metadata.Size)
+	if im.config.Debug {
+		log.Printf("index manager: read %s %d with %d pairs\n", filename, table.metadata.Serial, table.metadata.Size)
+	}
 
 	return nil
 }
@@ -306,9 +309,9 @@ func (im *IndexManager) createLevel() error {
 	}
 
 	// Create a new level
-	level, err := NewSSTable(metadata, im.config, allPairs)
+	level, err := serializeSSTable(metadata, im.config, allPairs)
 	if err != nil {
-		return fmt.Errorf("IndexManager.createLevel failed to create new physical level: %v", err)
+		return fmt.Errorf("IndexManager.createLevel failed to create new level: %v", err)
 	}
 
 	im.lvlSerial++
@@ -358,7 +361,9 @@ func (im *IndexManager) allItemsFromSSTables() ([]KVPair, error) {
 		pairs[i] = *pair
 	}
 
-	sort.Sort(Pairs(pairs))
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].Key < pairs[j].Key
+	})
 
 	return pairs, nil
 }

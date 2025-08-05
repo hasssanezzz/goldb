@@ -20,6 +20,7 @@ func (tm *TableMetadata) Serialize() []byte {
 	binary.Write(buffer, binary.LittleEndian, isLevelAsByte)
 	binary.Write(buffer, binary.LittleEndian, tm.Serial)
 	binary.Write(buffer, binary.LittleEndian, tm.Size)
+	binary.Write(buffer, binary.LittleEndian, tm.FilterSize)
 	buffer.Write(shared.KeyToBytes(tm.MinKey))
 	buffer.Write(shared.KeyToBytes(tm.MaxKey))
 
@@ -41,37 +42,43 @@ func (tm *TableMetadata) Deserialize(r io.Reader) error {
 	// read serial
 	_, err = r.Read(uintBuffer)
 	if err != nil {
-		return fmt.Errorf("failed to deserialize metadata: %v", err)
+		return fmt.Errorf("failed to deserialize serial: %v", err)
 	}
 	tm.Serial = binary.LittleEndian.Uint32(uintBuffer)
 
-	// read pair count
+	// read table size
 	_, err = r.Read(uintBuffer)
 	if err != nil {
-		return fmt.Errorf("failed to deserialize metadata: %v", err)
+		return fmt.Errorf("failed to deserialize table size: %v", err)
 	}
 	tm.Size = binary.LittleEndian.Uint32(uintBuffer)
+
+	// read filter size
+	_, err = r.Read(uintBuffer)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize filter size: %v", err)
+	}
+	tm.FilterSize = binary.LittleEndian.Uint32(uintBuffer)
 
 	// read min key
 	_, err = r.Read(keyBuffer)
 	if err != nil {
-		return fmt.Errorf("failed to deserialize metadata: %v", err)
+		return fmt.Errorf("failed to deserialize min key: %v", err)
 	}
 	tm.MinKey = shared.TrimPaddedKey(string(keyBuffer))
 
 	// read max key
 	_, err = r.Read(keyBuffer)
 	if err != nil {
-		return fmt.Errorf("failed to deserialize metadata: %v", err)
+		return fmt.Errorf("failed to deserialize max key: %v", err)
 	}
 	tm.MaxKey = shared.TrimPaddedKey(string(keyBuffer))
 
 	return nil
 }
 
-func serializePairs(pairs []KVPair, metadata *TableMetadata) []byte {
-	serializedMetadata := metadata.Serialize()
-	buffer := bytes.NewBuffer(serializedMetadata)
+func serializePairs(pairs []KVPair) []byte {
+	buffer := bytes.NewBuffer(nil)
 
 	// Write pairs
 	for _, pair := range pairs {

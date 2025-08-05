@@ -6,6 +6,11 @@ import (
 	"github.com/hasssanezzz/goldb/shared"
 )
 
+type Position struct {
+	Offset uint32
+	Size   uint32
+}
+
 type KVPair struct {
 	Key   string
 	Value Position
@@ -20,9 +25,3 @@ func (p KVPair) Encode() []byte {
 
 	return buffer
 }
-
-type Pairs []KVPair
-
-func (a Pairs) Len() int           { return len(a) }
-func (a Pairs) Less(i, j int) bool { return a[i].Key < a[j].Key }
-func (a Pairs) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
