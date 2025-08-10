@@ -5,6 +5,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/hasssanezzz/goldb/shared"
 )
@@ -14,6 +15,8 @@ type Engine struct {
 	indexManager   *IndexManager
 	storageManager DataManager
 	wal            WAL
+
+	mu sync.Mutex
 }
 
 func NewEngine(homepath string, configs ...shared.EngineConfig) (*Engine, error) {
@@ -53,6 +56,10 @@ func (e *Engine) setEntriesFromWAL() error {
 	if err != nil {
 		println("error parsing the logs")
 		return err
+	}
+
+	if e.Config.Debug {
+		log.Printf("Inserting %d entries from the WAL to the engine", len(entries))
 	}
 
 	for _, entry := range entries {
@@ -122,37 +129,17 @@ func (e *Engine) Get(key string) ([]byte, error) {
 }
 
 func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
-	// make sure key size is valid
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if len([]byte(key)) > int(e.Config.KeySize) {
 		return &shared.ErrKeyTooLong{Key: key, KeySize: e.Config.KeySize}
 	}
 
-	// first of all after validating the key size, write the pair to the WAL if not ingored.
-	if len(ignoreWAL) == 0 {
-		// when would I ignore writing to the WAL?
-		// when the I am setting KV pairs from the WAL I don't want to rewrite
-		// the pairs coming from the WAL to the WAL again.
+	settingFromWAL := len(ignoreWAL) != 0 && ignoreWAL[0]
+	if !settingFromWAL {
 		if err := e.wal.Append(WALEntry{key, value}); err != nil {
 			return err
-		}
-	}
-
-	// Flush if the memtable exceeds its threshold
-	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold || key == "#F" {
-		// Signal the IndexManager that a flush might be needed.
-		// Use a non-blocking send to avoid blocking Set if the channel is full.
-		select {
-		case e.indexManager.flushRequested <- struct{}{}:
-			// Signal sent successfully.
-			if e.Config.Debug {
-				log.Printf("Flush requested signaled.")
-			}
-		default:
-			// Channel buffer is full (flush already requested/not picked up yet).
-			// This is fine, the background goroutine will handle it when ready.
-			if e.Config.Debug {
-				log.Printf("Flush request dropped (already queued).")
-			}
 		}
 	}
 
@@ -165,6 +152,20 @@ func (e *Engine) Set(key string, value []byte, ignoreWAL ...bool) error {
 		Key:   key,
 		Value: position,
 	})
+
+	// Flush if the memtable exceeds its threshold
+	if e.indexManager.memtable.Size() >= e.Config.MemtableSizeThreshold && !settingFromWAL {
+		if e.indexManager.memtable.Size() != e.Config.MemtableSizeThreshold {
+			panic("threshold violation")
+		}
+
+		// TEMP: for debugging
+		if err := e.indexManager.flush(); err != nil {
+			panic(err)
+		}
+
+		e.wal.Clear()
+	}
 
 	return nil
 }
