@@ -50,7 +50,7 @@ func (t *AVLTree) Items() []KVPair {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	r := []KVPair{}
+	r := make([]KVPair, 0, t.size)
 	t.inOrder(t.root, &r)
 	return r
 }

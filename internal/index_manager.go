@@ -180,6 +180,13 @@ func (im *IndexManager) Keys() ([]string, error) {
 	return results, nil
 }
 
+func (im *IndexManager) Flush() error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	return im.flush()
+}
+
 // Close closes all open SSTables and levels.
 func (im *IndexManager) Close() error {
 	for _, table := range im.sstables {
