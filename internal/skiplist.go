@@ -148,14 +148,10 @@ func (sl *SkipList) Items() []KVPair { // Correct signature from Memtable interf
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 
-	var items []KVPair
-	current := sl.header.forward[0] // Start from the first actual node
+	items := make([]KVPair, 0, sl.size)
 
-	// Traverse the level 0 linked list to get all items in order.
+	current := sl.header.forward[0] // Start from the first actual node
 	for current != nil {
-		// Note: Items() returns all items, including potentially logically deleted ones
-		// (where Position.Size might be 0), unless the Memtable contract specifies otherwise.
-		// Based on the interface and typical usage, it returns all stored KV pairs.
 		items = append(items, KVPair{Key: current.key, Value: current.value})
 		current = current.forward[0]
 	}
